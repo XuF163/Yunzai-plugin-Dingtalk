@@ -1,8 +1,0 @@
-clientId: "dingwiqfbqssxli1sc32"
-clientSecret: "j7jWFRj_foOIgs4d--b-vFldclpgtp7Dhu9MOGX0ecIKjlQ4kWiSjpYVapqUMISm"
-webhook: "https://oapi.dingtalk.com/robot/sendBySession?session="
-Bucket: "gclog-1321866533"
-Region: "ap-guangzhou"
-Key: "uploads/${name}"
-SecretId: "AKIDR5WkrtkNmy9G9oHG2awCHAwXxAC4jGak"
-SecretKey: "XptkNs9D3e1DAsMdieMp45sRmtlOp5as"
