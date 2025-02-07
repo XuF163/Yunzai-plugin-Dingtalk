@@ -1,0 +1,10 @@
+#钉钉配置项目
+clientId: ""
+clientSecret: ""
+webhook: "https://oapi.dingtalk.com/robot/sendBySession?session="
+#腾讯云对象存储，非必要不食用
+Bucket: ""
+Region: ""
+Key: ""
+SecretId: ""
+SecretKey: ""

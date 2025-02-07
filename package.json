@@ -1,0 +1,19 @@
+{
+  "name": "Ding-plugin",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix",
+    "format": "prettier --write ."
+  },
+  "type": "module",
+  "keywords": [],
+  "author": "429",
+  "license": "ISC",
+  "dependencies": {
+    "dingtalk-stream": "^2.1.4"
+  }
+}
