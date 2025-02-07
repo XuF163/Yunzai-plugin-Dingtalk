@@ -9,13 +9,13 @@
 #### 本仓库源地址
 
 ```
-git clone --depth==1 https://github.com/XuF163/Yunzai-plugin-Dingtalk.git ./plugins/Ding-plugin  
+git clone --depth=1 https://github.com/XuF163/Yunzai-plugin-Dingtalk.git ./plugins/Ding-plugin  
 ```  
  
 #### 国服  
 
 ```
-git clone --depth==1 https://ghcdn.042999.xyz/https://github.com/XuF163/Yunzai-plugin-Dingtalk.git ./plugins/Ding-plugin
+git clone --depth=1 https://ghcdn.042999.xyz/https://github.com/XuF163/Yunzai-plugin-Dingtalk.git ./plugins/Ding-plugin
 ```
 ### 配置  
   参阅[钉钉开发者后台](open-dev.dingtalk.com/) ,选择stream格式，无需公网；webhook模式暂不适配
