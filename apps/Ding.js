@@ -4,7 +4,6 @@ import https from "https";
 import fs from "node:fs/promises";
 import readline from "node:readline/promises";
 import {sendMarkdownImage, sendMsg} from "../model/sender.js";
-import fileUpload from "../../genshin/model/oss/FileToUrl.js";
 import imageSize from "image-size";
 
 Bot.adapter.push(
