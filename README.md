@@ -18,12 +18,13 @@ git clone --depth=1 https://github.com/XuF163/Yunzai-plugin-Dingtalk.git ./plugi
 git clone --depth=1 https://ghcdn.042999.xyz/https://github.com/XuF163/Yunzai-plugin-Dingtalk.git ./plugins/Ding-plugin
 ```
 ### 配置  
-  参阅[钉钉开发者后台](open-dev.dingtalk.com/) ,选择stream格式，无需公网；webhook模式暂不适配
+  参阅[钉钉开发者后台](open-dev.dingtalk.com/) ,选择stream格式；webhook模式暂不适配
+
   
 TODO 
 - [x] 文本收发
 - [ ] Markdown
-- [ ] 图片
+- [x] 图片(可能需要公网环境)
 - [ ] 音频
 
 

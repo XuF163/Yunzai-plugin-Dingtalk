@@ -53,7 +53,7 @@ Bot.adapter.push(
 
     async _sendDingDingMsg(type, data, msg) {
 
-
+       console.log("msg",msg)
       if (!Array.isArray(msg)) msg = [msg];
 
       for (let i of msg) {
@@ -63,8 +63,8 @@ Bot.adapter.push(
         if (i.file) {
 
           file = await Bot.fileType(i);
-           console.log("_sendDingDingMsg - file after Bot.fileType:", file); //  !!! 新增日志 1: 打印 file 对象
-      console.log("_sendDingDingMsg - file.buffer instanceof Buffer:", Buffer.isBuffer(file.buffer)); //  !!! 新增日志 2: 检查 file.buffer 是否为 Buffer
+          logger.error("sendDingDingMsg - file after Bot.fileType:", file); //  !!! 新增日志 1: 打印 file 对象
+          logger.error("sendDingDingMsg - file.buffer instanceof Buffer:", Buffer.isBuffer(file.buffer)); //  !!! 新增日志 2: 检查 file.buffer 是否为 Buffer
           if (Buffer.isBuffer(file.buffer)) {
             file.path = `data/dingding/${file.name}`; // 钉钉适配器文件存储路径
             await fs.writeFile(file.path, file.buffer);
@@ -343,9 +343,14 @@ Bot.adapter.push(
           }
 
           if (data.message_type === "private") { // 私聊消息
+
             if (segment.type === 'text') { // 文本消息
               await sendMsg(segment.text, data.sessionWebhook); // 发送文本消息
             } else if (segment.type === 'image') { // 图片消息
+               console.log("data.reply - segment:", segment); //  !!! 打印 segment 对象
+              console.log("data.reply - segment.file:", segment.file); //  !!! 打印 segment.file 的值
+              console.dir(segment.file, { depth: null }); // 打印 segment.file 对象的完整结构  !!! 添加这一行
+segment.file.name = 'image.png';
               await sendMarkdownImage(data, segment.file, data.sessionWebhook, '图片'); // 发送图片消息
             } else { // 其他类型，记录日志 (可选)
               Bot.makeLog("warn", ["data.reply 私聊 -  不支持的消息类型回复", segment.type], data.self_id);

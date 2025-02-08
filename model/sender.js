@@ -4,7 +4,8 @@ import { EventAck } from "dingtalk-stream"; // 只需要 EventAck
 import fs from 'node:fs/promises';
 import path from "path";
 import sharp from 'sharp'; // 用于图片格式转换
-
+import Config from "../lib/config.js";
+import  DingTalkImageUploader  from "../model/panupload.js";
 // 导出 sendMsg 函数，用于发送文本消息
 export async function sendMsg(msg, sessionWebhook) {
   // 接收 sessionWebhook 作为参数
@@ -47,97 +48,59 @@ export async function sendMsg(msg, sessionWebhook) {
   return { status: EventAck.SUCCESS, message: "OK" };
 }
 
-// 导出 sendImg 函数，用于发送图片消息
-export async function sendImg(url, sessionWebhook) {
-  // 接收 sessionWebhook 作为参数
-  const webhook = sessionWebhook || config.webhook; // 优先使用传入的 sessionWebhook，否则使用 config.webhook
-  console.log("准备发送图片消息", url);
-  const responseMessage = {
-    msgtype: "markdown",
-    markdown: {
-      title: "我是图片",
-      text: `![screenshot](${url})\n`,
-    },
-  };
 
-  try {
-    console.log("发送消息[消息模块]", responseMessage);
-  } catch (error) {
-    console.error("处理消息时出错", error);
-  }
-
-  const data = JSON.stringify(responseMessage);
-  console.log("msg发送预备", responseMessage);
-  const options = {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-  };
-  const req = https.request(webhook, options, (res) => {
-    console.log(`状态码: ${res.statusCode}`);
-    res.on("data", (d) => {
-      console.log("data:", d);
-    });
-  });
-  req.on("error", (error) => {
-    console.error(error);
-  });
-  req.write(data);
-  req.end();
-  return {status: EventAck.SUCCESS, message: "OK"};
-}
-
-  /**
- * 发送 Markdown 图片消息 (简化版，不再依赖适配器实例)
- * @param {object} data 消息事件数据 (仍然接收 data 参数，但不再使用 data.self_id 获取适配器实例)
- * @param {string|Buffer} file 图片文件路径或 Buffer
- * @param {string} sessionWebhook 会话 Webhook (如果存在)
- * @param {string} [summary='图片'] 图片摘要 (Markdown 标题)
- * @returns {Promise<{status: string, message: string, error?: any}>} 发送结果
- */
 
 
   export async function sendMarkdownImage(data, file, sessionWebhook, summary = '图片') {
+    console.log("Debug - File parameter at sendMarkdownImage entry:"); //  !!!  添加日志： 打印进入 sendMarkdownImage 函数时 file 参数的完整结构
+  console.dir(file, { depth: null });
   // 优先使用会话 Webhook，否则使用全局配置 webhook
   const webhook = sessionWebhook || config.webhook;
   logger.info('准备发送图片消息', file);
 
-  // --- [Start] 将图片 buffer 转为 PNG 并保存到本地 ---
-  if (file && Buffer.isBuffer(file.file)) {
-    try {
-      // 使用 sharp 将输入 buffer 转为 PNG 格式
-      const pngBuffer = await sharp(file.file).png().toBuffer();
-
-      // 构造保存图片的本地路径（确保目录存在）
-      const debugImagePath = path.join('./temp/debug-images', `${Date.now()}-${summary}.png`);
-      await fs.mkdir(path.dirname(debugImagePath), { recursive: true });
-      await fs.writeFile(debugImagePath, pngBuffer);
-      logger.info(`[Debug] Buffer saved to local file: ${debugImagePath}`);
-
-      // 更新 file 对象，方便后续通过 Bot.fileToUrl 获取图片 URL（例如使用 file.path 属性）
-      file.file = pngBuffer;
-      file.path = debugImagePath;
-    } catch (err) {
-      logger.error("Error converting image buffer to PNG and saving locally", err);
-    }
+  if (file) {
+    console.log("sendMarkdownImage - File parameter type:", typeof file); // 打印 file 参数类型
+    console.log("sendMarkdownImage - File object keys:", Object.keys(file)); // 打印 file 对象的 key
   } else {
-    logger.warn("[Debug] file.file is not a Buffer, cannot save to local file.");
+    console.log("sendMarkdownImage - File parameter is null or undefined.");
   }
-  // --- [End] 将图片 buffer 转为 PNG 并保存到本地 ---
 
-  console.log("File parameter type:", typeof file);
-  console.log("File parameter instanceof Buffer:", file instanceof Buffer);
+  let imageUrl = null; // 初始化 imageUrl
+  let imageBuffer = null; // 用于存储实际的 Buffer 数据
 
   try {
-    // 直接调用 Bot.fileToUrl 获取图片 URL（内部可根据 file.path 等属性生成 URL）
-    const imageUrl = await Bot.fileToUrl(file);
-
-    if (!imageUrl) {
-      const errorMessage = 'Failed to generate image URL using Bot.fileToUrl.';
-      console.error(errorMessage);
-      return { status: 'FAILURE', message: errorMessage };
+    // 检查 file 是否是 Buffer 对象
+    if (Buffer.isBuffer(file)) {
+      logger.info('sendMarkdownImage: 检测到 file 参数直接是 Buffer 数据');
+      imageBuffer = file; // 如果 file 本身就是 Buffer，直接使用
+    } else if (file && Buffer.isBuffer(file.buffer)) {
+      logger.info('sendMarkdownImage: 检测到 file.buffer 包含 Buffer 数据');
+      imageBuffer = file.buffer; // 如果 file 是对象且 file.buffer 是 Buffer，则使用 file.buffer
+    } else {
+      const errorMessage = 'sendMarkdownImage: 未检测到有效的图片 Buffer 数据，无法上传图片。';
+      console.warn(errorMessage);
+      return { status: 'FAILURE', message: errorMessage }; // 如果没有 Buffer 数据，则无法上传图片
     }
+
+    // 确保 imageBuffer 存在有效的 Buffer 数据
+    if (imageBuffer && Buffer.isBuffer(imageBuffer)) {
+      logger.info('sendMarkdownImage: 准备上传图片 Buffer 数据到钉钉');
+      // 使用 dingTalkImageUploader 上传 Buffer 并获取 URL (使用 imageBuffer)
+      imageUrl = await DingTalkImageUploader.imageToDingTalkUrl(imageBuffer);
+
+      if (!imageUrl) {
+        const errorMessage = 'sendMarkdownImage: 使用 dingTalkImageUploader 上传图片失败，未获取到图片 URL。';
+        console.error(errorMessage);
+        return { status: 'FAILURE', message: errorMessage };
+      }
+      logger.info("sendMarkdownImage: 使用 dingTalkImageUploader 获取到图片URL:", imageUrl);
+
+    } else {
+      const errorMessage = 'sendMarkdownImage: 未检测到有效的图片 Buffer 数据，无法上传图片。 (imageBuffer 无效)';
+      console.warn(errorMessage);
+      return { status: 'FAILURE', message: errorMessage }; // 如果 imageBuffer 无效，则无法上传图片
+    }
+
 
     // 构造 Markdown 消息体，使用 imageUrl 嵌入图片
     const markdownMessage = {
@@ -148,11 +111,11 @@ export async function sendImg(url, sessionWebhook) {
       }
     };
 
-    logger.info("发送Markdown图片消息 - 图片URL:", imageUrl);
-    logger.debug('发送消息[消息模块]', markdownMessage);
+    logger.info("sendMarkdownImage: 发送Markdown图片消息 - 图片URL:", imageUrl);
+    logger.debug('sendMarkdownImage: 发送消息[消息模块]', markdownMessage);
 
     const postData = JSON.stringify(markdownMessage);
-    logger.debug('msg发送预备', markdownMessage);
+    logger.debug('sendMarkdownImage: msg发送预备', markdownMessage);
 
     const options = {
       method: 'POST',
@@ -164,43 +127,46 @@ export async function sendImg(url, sessionWebhook) {
     // 封装 HTTPS 请求，返回 Promise
     return new Promise((resolve, reject) => {
       const req = https.request(webhook, options, (res) => {
-        logger.debug(`状态码: ${res.statusCode}`);
+        logger.debug(`sendMarkdownImage: 状态码: ${res.statusCode}`);
         let responseData = '';
         res.on('data', (chunk) => {
           responseData += chunk;
-          logger.debug('data:', chunk.toString());
+          logger.debug('sendMarkdownImage: data:', chunk.toString());
         });
         res.on('end', () => {
           try {
             const parsedResponse = JSON.parse(responseData);
-            logger.debug('响应数据解析:', parsedResponse);
+            logger.debug('sendMarkdownImage: 响应数据解析:', parsedResponse);
             if (res.statusCode >= 200 && res.statusCode < 300) {
               resolve({ status: EventAck.SUCCESS, message: 'OK', response: parsedResponse });
             } else {
               const error = new Error(`HTTP 请求失败，状态码: ${res.statusCode}, 响应数据: ${responseData}`);
-              logger.error('钉钉API请求失败', error);
+              logger.error('sendMarkdownImage: 钉钉API请求失败', error);
               reject({ status: EventAck.FAILURE, message: '钉钉API请求失败', error: error });
             }
           } catch (parseError) {
-            logger.error('JSON 解析错误', parseError, responseData);
+            logger.error('sendMarkdownImage: JSON 解析错误', parseError, responseData);
             reject({ status: EventAck.FAILURE, message: 'JSON 解析错误', error: parseError });
           }
         });
       });
 
       req.on('error', (error) => {
-        logger.error('HTTPS 请求错误', error);
-        reject({ status: EventAck.FAILURE, message: 'HTTPS 请求错误', error: error });
+        logger.error('sendMarkdownImage: HTTPS 请求错误', error);
+        reject({ status: 'EventAck.FAILURE', message: 'HTTPS 请求错误', error: error });
       });
 
       req.write(postData);
       req.end();
     });
-  } catch (error) {
-    console.error('Error processing image in sendMarkdownImage:', error);
+  }
+  catch (error) { // 推荐
+    console.error('sendMarkdownImage: Error processing image in sendMarkdownImage:', error);
     return { status: 'FAILURE', message: 'Error processing image', error: error.message };
   }
 }
+
+
 
 
 
