@@ -1,12 +1,12 @@
-### Yunzai-plugin-Dingtalk
+### Yunzai-plugin-Dingtalk ![图标](https://ts3.cn.mm.bing.net/th?id=OSAAS.EB562BCA532DBEF8B75DD5135D9D9EF7&w=72&h=72&c=1&rs=1&o=6&dpr=1.3&pid=TechQna)    
 [![Hits](https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2FXuF163%2FYunzai-plugin-Dingtalk&count_bg=%23412DDC&title_bg=%23595454&icon=&icon_color=%23E7E7E7&title=hits&edge_flat=true)](https://hits.seeyoufarm.com)
 [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)]()
 
-## 适用于 TrssYunzai的钉钉机器人适配器  
+## 适用于 TrssYunzai的钉钉机器人适配器
 
-![图标](https://ts3.cn.mm.bing.net/th?id=OSAAS.EB562BCA532DBEF8B75DD5135D9D9EF7&w=72&h=72&c=1&rs=1&o=6&dpr=1.3&pid=TechQna)  
+
+无需日活跃，MARKDOWN权限点击就送！ 
 ### 本仓库源地址
-
 ```
 git clone --depth=1 https://github.com/XuF163/Yunzai-plugin-Dingtalk.git ./plugins/Ding-plugin  
 ```  
