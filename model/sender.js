@@ -107,7 +107,7 @@ export async function sendMsg(msg, sessionWebhook) {
       msgtype: 'markdown',
       markdown: {
         title: summary,
-        text: `![${summary}](${imageUrl})\n`
+        text: `![${summary}]${imageUrl}\n`
       }
     };
 
