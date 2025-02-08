@@ -8,3 +8,6 @@ Region: ""
 Key: ""
 SecretId: ""
 SecretKey: ""
+#钉盘密钥
+PanClient ID: ""
+PanClientSecret: ""
