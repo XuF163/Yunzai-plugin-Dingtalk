@@ -4,9 +4,10 @@
 
 ## 适用于 TrssYunzai的钉钉机器人适配器
 
-
-无需日活跃，MARKDOWN权限点击就送！ 
-### 本仓库源地址
+还在为QQBot日货不够无法MarkDown而烦恼吗  
+加入DingTalk  
+MARKDOWN权限点击就送！(bushi) 
+### 使用本仓库地址
 ```
 git clone --depth=1 https://github.com/XuF163/Yunzai-plugin-Dingtalk.git ./plugins/Ding-plugin  
 ```  
@@ -32,10 +33,12 @@ cd plugins/Ding-plugin && pnpm i
 
 TODO 
 - [x] 文本收发
-- [ ] Markdown
-- [x] 图片(可能需要公网环境)
+- [ ] 自定义Markdown
+- [x] 图片(如果没有其它具备图片上传能力的机器人存在则需要使用公网环境)
 - [ ] 音频
-
+- [ ] 主动消息  
 
 ### 免责声明
-本插件仅供学习交流使用，原则上不建议用于商业用途
+本插件仅供学习交流使用，转载请注明来源。  
+本仓库存在不代表作者认可上下游仓库的任何行为及价值观。  
+因使用本插件导致的任何问题（包括但不限于收益、损失等），作者概不负责。
