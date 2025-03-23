@@ -3,7 +3,7 @@ import { DWClient, EventAck, TOPIC_ROBOT } from "dingtalk-stream";
 import https from "https";
 import fs from "node:fs/promises";
 import readline from "node:readline/promises";
-import {sendMarkdownImage, sendMsg} from "../model/sender.js";
+import { sendMarkdownImage, sendMsg } from "../model/sender.js";
 import imageSize from "image-size";
 
 Bot.adapter.push(
@@ -20,469 +20,474 @@ Bot.adapter.push(
         clientSecret: this.clientSecret,
         debug: true,
       });
+      // 移除 load() 中重复创建 Dingclient 的代码，这里已经创建
     }
 
     makeLog(msg) {
       return Bot.String(msg).replace(
-        /base64:\/\/.*?(,|]|")/g,
+        /base64:\/\/.*?([,\]"])/g,
         "base64://...$1",
       );
     }
     sendApi() {
+      return true; // 如果有实际的 API 检查逻辑，应该在这里实现
+    }
+
+    async uploadFile(data, file) {
+      // TODO: 实现文件上传逻辑
+      Bot.makeLog("warn", "[DingDing] uploadFile 方法尚未实现", this.id);
+    }
+
+    async sendFriendMsg(data, msg) {
+      Bot.makeLog("debug", "[DingDing friend] sendFriendMsg data 参数:", data);
+      Bot.makeLog("debug", "[DingDing friend] sendFriendMsg msg 参数:", msg);
+      await this._sendDingDingMsg("friend", data, msg);
       return true;
     }
 
-    async uploadFile(data, file) {}
-
-    async sendFriendMsg(data, msg) {
-      console.log("sendFriendMsg data 参数:", data); // 打印 data 参数
-      console.log("sendFriendMsg msg 参数:", msg); // 打印 msg 参数
-      console.log("data msg ", data.msg);
-      await this._sendDingDingMsg("friend", data, msg); // 调用统一的消息发送处理方法
-      return true; // 返回 true
-    }
-
     async sendGroupMsg(data, msg) {
-      console.log("sendGroupMsg data 参数:", data); // 打印 data 参数
-      console.log("sendGroupMsg msg 参数:", msg); // 打印 msg 参数
-      console.log("data msg ", data.msg);
-      await this._sendDingDingMsg("group", data, msg); // 调用统一的消息发送处理方法
-      return true; // 返回 true
+      Bot.makeLog("debug", "[DingDing group] sendGroupMsg data 参数:", data);
+      Bot.makeLog("debug", "[DingDing group] sendGroupMsg msg 参数:", msg);
+      await this._sendDingDingMsg("group", data, msg);
+      return true;
     }
 
     async _sendDingDingMsg(type, data, msg) {
-
-       console.log("msg",msg)
+      Bot.makeLog("debug", `[DingDing ${type}] _sendDingDingMsg msg 参数:`, msg);
       if (!Array.isArray(msg)) msg = [msg];
 
-      for (let i of msg) {
-        if (typeof i != "object") i = { type: "text", text: i };
+      for (const segment of msg) { // 使用 for...of 循环遍历消息段
+        if (typeof segment !== "object") segment = { type: "text", text: segment };
+
+        if (segment.type === "button") {
+          Bot.makeLog("debug", `[DingDing ${type}] 忽略按钮类型消息段:`, segment);
+          continue;
+        }
 
         let file;
-        if (i.file) {
-
-          file = await Bot.fileType(i);
-          logger.error("sendDingDingMsg - file after Bot.fileType:", file); //  !!! 新增日志 1: 打印 file 对象
-          logger.error("sendDingDingMsg - file.buffer instanceof Buffer:", Buffer.isBuffer(file.buffer)); //  !!! 新增日志 2: 检查 file.buffer 是否为 Buffer
-          if (Buffer.isBuffer(file.buffer)) {
-            file.path = `data/dingding/${file.name}`; // 钉钉适配器文件存储路径
-            await fs.writeFile(file.path, file.buffer);
-            file.url = `${file.url}\n路径: ${logger.cyan(file.path)}\n网址: ${logger.green(await Bot.fileToUrl(file))}`;
+        if (segment.file) {
+          file = await Bot.fileType(segment);
+          Bot.makeLog("debug", `[DingDing ${type}] 文件类型检测结果:`, file);
+          if (file?.buffer instanceof Buffer) { // 使用 ?. 链式操作符
+            file.path = `data/dingding/${file.name}`;
+            try {
+              await fs.writeFile(file.path, file.buffer);
+              file.url = `${file.url}\n路径: ${logger.cyan(file.path)}\n网址: ${logger.green(await Bot.fileToUrl(file))}`;
+            } catch (error) {
+              Bot.makeLog("error", `[DingDing ${type}] 写入文件失败:`, error, this.id);
+            }
+          } else {
+            Bot.makeLog("warn", `[DingDing ${type}] 文件 buffer 无效:`, file, this.id);
           }
         }
 
-        switch (i.type) {
-
-            case "button":
-                continue
-
+        switch (segment.type) {
           case "text":
-            if (i.text.match("\n")) i.text = `发送文本: \n${i.text}`;
-            Bot.makeLog("info", `[DingDing ${type}] ${i.text}`, this.id); // 日志前缀区分消息类型 (friend/group)
+            if (segment.text.includes("\n")) segment.text = `发送文本: \n${segment.text}`; // 使用 includes 更简洁
+            Bot.makeLog("info", `[DingDing ${type}] ${segment.text}`, this.id);
             break;
           case "image":
-            Bot.makeLog(
-              "info",
-              `[DingDing ${type}] 发送图片: ${file.url}`,
-              this.id,
-            );
-            await sendMarkdownImage(data, file, data.sessionWebhook); // 正确调用方式，并添加 await
-            Bot.makeLog("info", Imgurl);
+            if (file?.url) { // 只有当 file 和 url 都存在时才发送
+              Bot.makeLog(
+                "info",
+                `[DingDing ${type}] 发送图片: ${file.url}`,
+                this.id,
+              );
+              await sendMarkdownImage(data, file, data.sessionWebhook); // 确保 data.sessionWebhook 存在
+              Bot.makeLog("info", Imgurl); // 注意 Imgurl 可能未定义
+            } else {
+              Bot.makeLog("warn", `[DingDing ${type}] 图片文件信息不完整，无法发送`, segment, this.id);
+            }
             break;
           case "record":
-            Bot.makeLog(
-              "info",
-              `[DingDing ${type}] 发送音频: ${file.url}`,
-              this.id,
-            );
+            if (file?.url) {
+              Bot.makeLog(
+                "info",
+                `[DingDing ${type}] 发送音频: ${file.url}`,
+                this.id,
+              );
+              // TODO: 实现发送音频的逻辑
+            } else {
+              Bot.makeLog("warn", `[DingDing ${type}] 音频文件信息不完整，无法发送`, segment, this.id);
+            }
             break;
           case "video":
-            Bot.makeLog(
-              "info",
-              `[DingDing ${type}] 发送视频: ${file.url}`,
-              this.id,
-            );
+            if (file?.url) {
+              Bot.makeLog(
+                "info",
+                `[DingDing ${type}] 发送视频: ${file.url}`,
+                this.id,
+              );
+              // TODO: 实现发送视频的逻辑
+            } else {
+              Bot.makeLog("warn", `[DingDing ${type}] 视频文件信息不完整，无法发送`, segment, this.id);
+            }
             break;
           case "file":
-            Bot.makeLog(
-              "info",
-              `[DingDing ${type}] 发送文件: ${file.url}`,
-              this.id,
-            );
+            if (file?.url) {
+              Bot.makeLog(
+                "info",
+                `[DingDing ${type}] 发送文件: ${file.url}`,
+                this.id,
+              );
+              // TODO: 实现发送文件的逻辑
+            } else {
+              Bot.makeLog("warn", `[DingDing ${type}] 文件信息不完整，无法发送`, segment, this.id);
+            }
             break;
           case "reply":
           case "at":
-            break; //  reply 和 at 消息类型在钉钉适配器中可能没有特殊处理
+            break; // 可以添加日志说明这些类型在钉钉适配器中没有特殊处理
           case "node":
             await Bot.sendForwardMsg(
-              (msg) => this._sendDingDingMsg(type, data, msg),
-              i.data,
-            ); // 转发消息， 递归调用 _sendDingDingMsg
+              (forwardMsg) => this._sendDingDingMsg(type, data, forwardMsg),
+              segment.data,
+            );
             break;
           default:
-            Bot.makeLog("info", `[DingDing ${type}] 未知消息类型:`, i, this.id); // 记录未知消息类型
+            Bot.makeLog("warn", `[DingDing ${type}] 未知消息类型:`, segment, this.id);
         }
       }
 
+      let textContent = ""; // 提取所有文本消息段的内容
+      if (Array.isArray(msg)) {
+        textContent = msg.filter(m => m?.type === 'text').map(m => m.text).join('\n').trim();
+      } else if (typeof msg === "string") {
+        textContent = msg.trim();
+      }
+
+      const atUserIds = data?.user_id ? [data.user_id] : 0// 更安全地获取 atUserIds
+
+      const textMessagePayload = {
+        msgtype: "text",
+        text: {
+          content: textContent,
+        },
+        at: {
+          atUserIds: atUserIds,
+        },
+      };
+
       if (type === "friend") {
-        //  好友消息发送逻辑
-        console.log("_sendDingDingMsg friend 分支 data 参数:", data); // 打印 friend 分支 data 参数
-        console.log("_sendDingDingMsg friend 分支 msg 参数:", msg); // 打印 friend 分支 msg 参数
-        let textContent = "";
-        if (Array.isArray(msg)) {
-          for (const segment of msg) {
-            if (segment.type === "text") {
-              textContent += segment.text; //  修改点：使用 segment.text
-            }
-          }
-        } else if (typeof msg === "string") {
-          textContent = msg;
-        }
-
-        const textMessagePayload = {
-          msgtype: "text",
-          text: {
-            content: textContent.trim(),
-          },
-          at: {
-            atUserIds: [data?.user_id || ""],
-          },
-        };
+        Bot.makeLog("debug", "[DingDing friend] 尝试发送文本消息:", textMessagePayload);
         this._replyMessage(data.sessionWebhook, textMessagePayload);
-        return true; // 返回 true
+        return true;
       } else if (type === "group") {
-        // 群消息发送逻辑 (目前为空， 需要您根据钉钉群消息 API 实现)
-
-        const textMessagePayload = {
-          msgtype: "text",
-          text: {
-            content: textContent.trim(), //  使用提取到的文本内容，并去除首尾空格
-          },
-          at: {
-            atUserIds: [data?.user_id || ""], //  这里假设 data 中包含 user_id,  可能需要根据实际情况调整 @ 用户的逻辑
-          },
-        };
-
-        console.log("_sendDingDingMsg group 分支 data 参数:", data); // 打印 group 分支 data 参数
-        console.log("_sendDingDingMsg group 分支 msg 参数:", msg); // 打印 group 分支 msg 参数
-        let textContent = ""; //  添加：初始化 textContent
-        if (Array.isArray(msg)) {
-          // 添加：处理数组消息
-          for (const segment of msg) {
-            if (segment.type === "text") {
-              textContent += segment.text;
-            }
-          }
-        } else if (typeof msg === "string") {
-          textContent = msg;
-        }
-
-        return Promise.resolve({ message_id: Date.now().toString(36) }).then(
-          () => true,
-        ); //  群消息发送实现， 记得返回 message_id 并且返回 true
+        Bot.makeLog("debug", "[DingDing group] 尝试发送文本消息:", textMessagePayload);
+        // TODO: 实现群消息发送逻辑，可能需要不同的 API 调用
+        this._replyMessage(data.sessionWebhook, textMessagePayload); // 临时使用相同的回复方法，需要替换为正确的群消息发送逻辑
+        return Promise.resolve({ message_id: Date.now().toString(36) }).then(() => true);
       } else {
-        Bot.makeLog(
-          "warn",
-          `[DingDing] 未知消息类型 (friend/group): ${type}`,
-          this.id,
-        ); // 记录未知的消息类型
-        return Promise.reject(new Error(`Unknown message type: ${type}`)); //  返回 rejected Promise
+        Bot.makeLog("warn", `[DingDing] 未知消息类型 (friend/group): ${type}`, this.id);
+        return Promise.reject(new Error(`Unknown message type: ${type}`));
       }
     }
 
     async makeMsg(data, msg, send) {
-      console.log("data msg send", data.msg, send);
+      Bot.makeLog("debug", "[DingDing] makeMsg data:", data, "msg:", msg, "send:", send);
+      // TODO: 实现 makeMsg 的逻辑，根据需要处理消息的创建
     }
 
     async getFriendArray(data) {
-      console.log("data", data);
+      Bot.makeLog("debug", "[DingDing] getFriendArray data:", data);
+      // TODO: 实现获取好友列表的逻辑
+      return;
     }
 
     async getFriendList(data) {
-      console.log("getFriendList data", data);
+      Bot.makeLog("debug", "[DingDing] getFriendList data:", data);
+      // TODO: 实现获取好友列表的逻辑
+      return {};
     }
 
     async getFriendMap(data) {
-      console.log("getFriendMap data", data);
+      Bot.makeLog("debug", "[DingDing] getFriendMap data:", data);
+      // TODO: 实现获取好友 Map 的逻辑
+      return new Map();
     }
 
     async getFriendInfo(data) {
-      console.log("getFriendInfo data", data);
+      Bot.makeLog("debug", "[DingDing] getFriendInfo data:", data);
+      // TODO: 实现获取好友信息的逻辑
+      return {};
     }
 
     async getGroupArray(data) {
-      console.log("getGroupArray data", data);
+      Bot.makeLog("debug", "[DingDing] getGroupArray data:", data);
+      // TODO: 实现获取群组列表的逻辑
+      return;
     }
 
     async getGroupList(data) {
-      console.log("getGroupList data", data);
+      Bot.makeLog("debug", "[DingDing] getGroupList data:", data);
+      // TODO: 实现获取群组列表的逻辑
+      return {};
     }
 
     async getGroupMap(data) {
-      console.log("getGroupMap data", data);
+      Bot.makeLog("debug", "[DingDing] getGroupMap data:", data);
+      // TODO: 实现获取群组 Map 的逻辑
+      return new Map();
     }
 
     async getGroupInfo(data) {
-      console.log("getGroupInfo data", data);
+      Bot.makeLog("debug", "[DingDing] getGroupInfo data:", data);
+      // TODO: 实现获取群组信息的逻辑
+      return {};
     }
 
     async getMemberArray(data) {
-      console.log("getMemberArray data", data);
+      Bot.makeLog("debug", "[DingDing] getMemberArray data:", data);
+      // TODO: 实现获取群组成员列表的逻辑
+      return;
     }
 
     async getMemberList(data) {
-      console.log("getMemberList data", data);
+      Bot.makeLog("debug", "[DingDing] getMemberList data:", data);
+      // TODO: 实现获取群组成员列表的逻辑
+      return {};
     }
 
     async getMemberMap(data) {
-      console.log("getMemberMap data", data);
+      Bot.makeLog("debug", "[DingDing] getMemberMap data:", data);
+      // TODO: 实现获取群组成员 Map 的逻辑
+      return new Map();
     }
 
     async getGroupMemberMap(data) {
-      console.log("getGroupMemberMap data", data);
+      Bot.makeLog("debug", "[DingDing] getGroupMemberMap data:", data);
+      // TODO: 实现获取群组成员 Map 的逻辑
+      return new Map();
     }
 
     async getMemberInfo(data) {
-      console.log("getMemberInfo data", data);
+      Bot.makeLog("debug", "[DingDing] getMemberInfo data:", data);
+      // TODO: 实现获取成员信息的逻辑
+      return {};
     }
 
     pickMember(data, group_id, user_id) {
-      console.log("pickMember data", data, group_id, user_id);
+      Bot.makeLog("debug", "[DingDing] pickMember data:", data, group_id, user_id);
+      // TODO: 实现选择群成员的逻辑
     }
 
     pickGroup(data, group_id) {
-      console.log("pickGroup data", data, group_id);
+      Bot.makeLog("debug", "[DingDing] pickGroup data:", data, group_id);
+      // TODO: 实现选择群组的逻辑
     }
 
     async connect(data, ws) {
-      console.log("connect data", data, ws);
+      Bot.makeLog("debug", "[DingDing] connect data:", data, "ws:", ws);
+      // TODO: 实现连接逻辑，如果需要的话
     }
 
-    makeNotice(data) {}
+    makeNotice(data) {
+      Bot.makeLog("debug", "[DingDing] makeNotice data:", data);
+      // TODO: 实现处理通知的逻辑
+    }
 
-    makeRequest(data) {}
+    makeRequest(data) {
+      Bot.makeLog("debug", "[DingDing] makeRequest data:", data);
+      // TODO: 实现处理请求的逻辑
+    }
 
-    makeMeta(data, ws) {}
+    makeMeta(data, ws) {
+      Bot.makeLog("debug", "[DingDing] makeMeta data:", data, "ws:", ws);
+      // TODO: 实现处理元数据的逻辑
+    }
 
-    message(data, ws) {}
+    message(data, ws) {
+      Bot.makeLog("debug", "[DingDing] message data:", data, "ws:", ws);
+      // TODO: 实现处理原始消息的逻辑，如果需要的话
+    }
 
-    makeMessage(event) {
-      console.log("makeMessage 原始 event.data:", event.data.toString()); //  !!! 添加日志： 打印原始 event.data 字符串 (在函数最顶端)
+   makeMessage(event) {
+      Bot.makeLog("debug", "[DingDing] makeMessage 原始 event.data:", event.data.toString());
 
       let data;
       try {
-        data = JSON.parse(event.data); // 解析 event.data 获取消息内容
+        data = JSON.parse(event.data);
       } catch (e) {
-        this.makeLog(`Error parsing message data: ${e}`); // JSON 解析失败的错误处理
-        return; // 如果解析失败，直接返回，不继续处理
+        this.makeLog(`Error parsing message data: ${e}`);
+        return;
       }
 
       if (!data) {
-        this.makeLog("Warning: Received empty message data after parsing."); // 解析后 data 为空的警告
-        return; // 如果 data 为空，直接返回
+        this.makeLog("Warning: Received empty message data after parsing.");
+        return;
       }
 
       data.message = [
         { type: "text", text: (data?.text?.content || "").trim() },
-      ]; // 统一 message 格式，文本消息
-      data.raw_message = data.text.content; // 原始消息内容
+      ];
+      data.raw_message = data.text.content;
 
-      //  !!! 正确位置： console.log 移动到 data.message 和 data.raw_message 赋值之后
-      console.log("makeMessage data.message:", data.message);
-      console.log("makeMessage data.raw_message:", data.raw_message);
+      Bot.makeLog("debug", "[DingDing] makeMessage data.message:", data.message);
+      Bot.makeLog("debug", "[DingDing] makeMessage data.raw_message:", data.raw_message);
 
-      data.post_type = "message"; // 设置 post_type 为 'message'
-      data.message_type = data.conversationType === "2" ? "group" : "private"; // 根据 conversationType 判断消息类型 (群聊或私聊)
-      data.self_id = this.clientId; // 设置 self_id 为 clientId (机器人自身 ID)
-      data.user_id = data.senderId; // 发送者 user_id
+      data.post_type = "message";
+      data.message_type = data.conversationType === "2" ? "group" : "private";
+      data.self_id = this.clientId;
+      data.user_id = data.senderId;
       data.sender = {
         user_id: data.senderId,
         nickname: data.senderNick,
         // 可以根据需要添加更多 sender 信息，例如 role, isAdmin 等
       };
 
+      // 添加适配器信息到 data 对象
+      const adapterInfo = Bot[this.id]?.adapter;
+      if (adapterInfo) {
+        data.adapter = {
+          id: adapterInfo.id,
+          name: adapterInfo.name,
+          version: adapterInfo.version,
+        };
+      } else {
+        data.adapter = {
+          id: this.id,
+          name: this.name,
+          version: this.version,
+        };
+      }
+      data.adapter_id = data.adapter.id;
+      data.adapter_name = data.adapter.name;
+
       if (data.message_type === "group") {
-        data.group_id = data.conversationId; // 群聊时 group_id 为 conversationId
-        data.group_name = data.conversationTitle; // 群名称
+        data.group_id = data.conversationId;
+        data.group_name = data.conversationTitle;
         Bot.makeLog(
           "info",
-          `钉钉群消息：[${data.group_name}, ${data.sender}] ${data.raw_message}`,
+          `钉钉群消息：[${data.group_name}, ${data.sender.nickname}(${data.user_id})] ${data.raw_message}`,
           `${data.self_id} <= ${data.group_id}, ${data.user_id}`,
           true,
         );
-        Bot.em(`message.dingding.group`, data); // 发射 message.dingding.group 事件
+        Bot.em(`message.dingding.group`, data);
       } else if (data.message_type === "private") {
         Bot.makeLog(
           "info",
-          `钉钉私聊消息：[${data.sender.nickname}] ${data.raw_message}`,
+          `钉钉私聊消息：[${data.sender.nickname}(${data.user_id})] ${data.raw_message}`,
           `${data.self_id} <= ${data.user_id}`,
           true,
         );
-        Bot.em(`message.dingding.private`, data); // 发射 message.dingding.private 事件
+        Bot.em(`message.dingding.private`, data);
       } else {
         Bot.makeLog(
           "warn",
           `未知钉钉消息类型：${logger.magenta(event.data)}`,
           data.self_id,
-        ); // 未知消息类型的警告
-        Bot.em(`message.dingding.unknown`, data); // 发射 message.dingding.unknown 事件 (可选)
+        );
+        Bot.em(`message.dingding.unknown`, data);
       }
 
-
-      //  !!! 修改 data.reply 方法，使其支持消息数组
       data.reply = async (msg) => {
-        if (!Array.isArray(msg)) msg = [msg]; // 确保 msg 是数组
+        if (!Array.isArray(msg)) msg = [msg];
 
-        for (let segment of msg) { // 遍历消息数组
-          if (typeof segment !== 'object') segment = { type: 'text', text: segment }; // 确保 segment 是对象
+        for (const segment of msg) {
+          if (typeof segment !== 'object') segment = { type: 'text', text: segment };
 
-          if (segment.type === 'button') { // 忽略按钮类型
-            console.log("data.reply 发现按钮对象，已忽略:", segment);
-            continue; // 跳过按钮
+          if (segment.type === 'button') {
+            Bot.makeLog("debug", "[DingDing] data.reply 发现按钮对象，已忽略:", segment);
+            continue;
           }
 
-          if (data.message_type === "private") { // 私聊消息
-
-            if (segment.type === 'text') { // 文本消息
-              await sendMsg(segment.text, data.sessionWebhook); // 发送文本消息
-            } else if (segment.type === 'image') { // 图片消息
-               console.log("data.reply - segment:", segment); //  !!! 打印 segment 对象
-              console.log("data.reply - segment.file:", segment.file); //  !!! 打印 segment.file 的值
-              console.dir(segment.file, { depth: null }); // 打印 segment.file 对象的完整结构  !!! 添加这一行
-segment.file.name = 'image.png';
-              await sendMarkdownImage(data, segment.file, data.sessionWebhook, '图片'); // 发送图片消息
-            } else { // 其他类型，记录日志 (可选)
-              Bot.makeLog("warn", ["data.reply 私聊 -  不支持的消息类型回复", segment.type], data.self_id);
+          if (data.message_type === "private") {
+            if (segment.type === 'text') {
+              await sendMsg(segment.text, data.sessionWebhook);
+            } else if (segment.type === 'image') {
+              Bot.makeLog("debug", "[DingDing] data.reply - segment:", segment);
+              Bot.makeLog("debug", "[DingDing] data.reply - segment.file:", segment.file);
+              Bot.makeLog("debug", "[DingDing] data.reply - segment.file (full):", segment.file, { depth: null });
+              if (segment.file) {
+                segment.file.name = 'image.png'; // 强制设置文件名，避免一些潜在问题
+                await sendMarkdownImage(data, segment.file, data.sessionWebhook, '图片');
+              } else {
+                Bot.makeLog("warn", "[DingDing] data.reply 私聊 - 图片消息 segment.file 为空", segment);
+              }
+            } else {
+              Bot.makeLog("warn", "[DingDing] data.reply 私聊 -  不支持的消息类型回复", segment.type, segment);
             }
-          } else if (data.message_type === "group") { // 群聊消息
-            if (segment.type === 'text') { // 文本消息
-              await sendMsg(segment.text, data.sessionWebhook); // 发送文本消息
-            } else if (segment.type === 'image') { // 图片消息
-              await sendMarkdownImage(data, segment.file, data.sessionWebhook, '图片'); // 发送图片消息
-            } else { // 其他类型，记录日志 (可选)
-              Bot.makeLog("warn", ["data.reply 群聊 - 不支持的消息类型回复", segment.type], data.self_id);
+          } else if (data.message_type === "group") {
+            if (segment.type === 'text') {
+              await sendMsg(segment.text, data.sessionWebhook);
+            } else if (segment.type === 'image') {
+              if (segment.file) {
+                segment.file.name = 'image.png'; // 强制设置文件名
+                await sendMarkdownImage(data, segment.file, data.sessionWebhook, '图片');
+              } else {
+                Bot.makeLog("warn", "[DingDing] data.reply 群聊 - 图片消息 segment.file 为空", segment);
+              }
+            } else {
+              Bot.makeLog("warn", "[DingDing] data.reply 群聊 - 不支持的消息类型回复", segment.type, segment);
             }
-          } else { // 未知消息类型
+          } else {
             Bot.makeLog(
               "warn",
-              ["data.reply - 不支持的消息类型回复", data.message_type],
-              data.self_id,
+              "[DingDing] data.reply - 不支持的消息类型回复", data.message_type, segment
             );
           }
         }
-        return true; // 返回 true，表示回复尝试完成
+        return true;
       };
-    //   // 添加 reply 方法到 data 对象
-    //   data.reply = async (msg) => {
-    //     if (data.message_type === "private") {
-    //       console.log("data.reply - msg parameter type BEFORE sendMarkdownImage:", typeof msg); //  !!! 打印 msg 参数类型
-    // console.log("data.reply - msg instanceof Buffer BEFORE sendMarkdownImage:", msg instanceof Buffer); //  !!! 打印 msg 是否为 Buffer 实例
-    //
-    //       await sendMsg(msg, data.sessionWebhook);
-    //       await sendMarkdownImage(data,msg,data.sessionWebhook,'图片')
-    //
-    //     } else if (data.message_type === "group") {
-    //       return sendMsg(msg, data.sessionWebhook);
-    //
-    //     } else {
-    //
-    //       Bot.makeLog(
-    //         "warn",
-    //         ["不支持的消息类型回复", data.message_type],
-    //         data.self_id,
-    //       );
-    //       return false; // 或者抛出异常
-    //     }
-    //   };
+    }
+    async makeBotImage (file) {
+      if (config?.toBotUpload) { // 使用可选链操作符 ?. 更安全地访问 config
+        for (const i of Bot.uin) {
+          if (!Bot[i]?.dingUploadImage) continue // 使用可选链操作符 ?.
+          try {
+            const image = await Bot[i].dingUploadImage(file);
+            if (image?.url) { // 使用可选链操作符 ?.
+              return image;
+            }
+          } catch (err) {
+            Bot.makeLog('error', ['Bot', i, '钉钉图片上传错误', file, err]);
+          }
+        }
+      }
+      return undefined;
     }
 
-async makeBotImage (file) {
-  if (config.toBotUpload) { // 仍然保留 config.toBotUpload 配置项的检查
-    for (const i of Bot.uin) { // 遍历 Bot 账号 (可能钉钉只有一个账号，可以简化)
-      if (!Bot[i].dingUploadImage) continue //  假设你在 Bot[i] 对象上实现了 dingUploadImage 方法来调用钉钉上传 API
+    async makeMarkdownImage (data, file, summary = '图片') {
       try {
-        const image = await Bot[i].dingUploadImage(file); // 调用钉钉图片上传 API (假设方法名为 dingUploadImage)
-        if (image && image.url) { // 检查返回的 image 对象是否包含 url 属性
-          return image; // 返回包含图片 URL 的 image 对象
+        const buffer = await Bot.Buffer(file);
+        const image =
+          await this.makeBotImage(buffer) ||
+          { url: await Bot.fileToUrl(file) };
+
+        if (!image?.width || !image?.height) { // 使用可选链操作符 ?.
+          try {
+            const size = imageSize(buffer);
+            image.width = size.width;
+            image.height = size.height;
+          } catch (err) {
+            Bot.makeLog('error', ['图片分辨率检测错误', file, err], data.self_id);
+          }
         }
-      } catch (err) {
-        Bot.makeLog('error', ['Bot', i, '钉钉图片上传错误', file, err]); // 记录钉钉图片上传错误
+
+        const scale = config?.markdownImgScale ?? 1; // 使用空值合并运算符 ?? 提供默认值
+        image.width = Math.floor((image.width || 0) * scale); // 使用 || 0 避免 undefined 参与计算
+        image.height = Math.floor((image.height || 0) * scale);
+
+        return {
+          des: `![${summary} #${image.width}px #${image.height}px]`, // 简化 markdown 格式
+          url: `(${image.url})`
+        };
+      } catch (error) {
+        Bot.makeLog('error', ['makeMarkdownImage 发生错误', file, error], data.self_id);
+        return { des: `![${summary}]`, url: `()` }; // 出错时返回一个默认值，避免程序崩溃
       }
     }
-  }
-  return undefined; // 如果所有 Bot 账号上传都失败，返回 undefined
-}
-async makeMarkdownImage (data, file, summary = '图片') {
-  const buffer = await Bot.Buffer(file)
-  const image =
-    await this.makeBotImage(buffer) ||
-    { url: await Bot.fileToUrl(file) }
-
-  if (!image.width || !image.height) {
-    try {
-      const size = imageSize(buffer)
-      image.width = size.width
-      image.height = size.height
-    } catch (err) {
-      Bot.makeLog('error', ['图片分辨率检测错误', file, err], data.self_id)
+async getBotInfo() {
+      // TODO: 使用 DingTalk SDK 的方法获取机器人信息
+      // 示例 (需要根据实际 SDK 方法调整):
+      //const info = await this.Dingclient.getBotInfo();
+      return {
+        nick: "DingDing机器人", // 替换为实际获取的昵称
+        avatarUrl: "https://img.kookapp.cn/assets/2025-03/23/4nzb8Kpe0r05k05k.png", // 替换为实际获取的头像 URL
+      };
     }
-  }
 
-  image.width = Math.floor(image.width * config.markdownImgScale)
-  image.height = Math.floor(image.height * config.markdownImgScale)
-
-  return {
-    des: `![<span class="math-inline">\{summary\} \#</span>{image.width || 0}px #${image.height || 0}px]`,
-    url: `(${image.url})`
-  }
-}
-
-    // async _sendDingDingMsg(type, data, msg) {
-    //   //  保留函数结构和参数，但简化内部逻辑
-    //   let textContent = ""; // 初始化 textContent 变量
-    //
-    //   if (!Array.isArray(msg)) {
-    //     msg = [msg]; //  如果 msg 不是数组，转换为数组统一处理
-    //   }
-    //
-    //   for (let i of msg) {
-    //     // if (typeof i != "object") {
-    //     //   i = { type: "text", text: i }; // 默认处理为文本消息段
-    //     // }
-    //     if (i.type === "text") {
-    //       textContent += i.text; // 累加文本消息段的内容
-    //     }
-    //   }
-    //
-    //   //  !!!  简化后的 _sendDingDingMsg 函数主体： 只进行日志打印，不再构建 payload 和调用 _replyMessage
-    //
-    //   if (type === "friend") {
-    //     //  好友消息类型
-    //
-    //     Bot.makeLog(
-    //       "info",
-    //       `[DingDing friend] 模拟发送消息: ${textContent.trim()}  到用户: <span class="math-inline">\{data\.sender\.nickname\}\(</span>{data.user_id})`,
-    //       this.id,
-    //     ); // 打印模拟发送好友消息日志
-    //   } else if (type === "group") {
-    //     // 群聊消息类型
-    //     Bot.makeLog(
-    //       "info",
-    //       `[DingDing group] 模拟发送消息: ${textContent.trim()}  到群组: <span class="math-inline">\{data\.group\_name\}\(</span>{data.group_id})`,
-    //       this.id,
-    //     ); // 打印模拟发送群组消息日志
-    //   } else {
-    //     //  未知消息类型
-    //     Bot.makeLog(
-    //       "warn",
-    //       `[DingDing] 未知消息类型 (friend/group): ${type}, 模拟发送消息: ${textContent.trim()}`,
-    //       this.id,
-    //     ); // 打印未知消息类型模拟发送日志
-    //   }
-    //
-    //   return Promise.resolve(true); //  模拟发送成功，直接 resolve Promise 返回 true
-    // }
-    load() {
+    async load() {
       const Dingclient = this.Dingclient;
       const onBotMessage = async (event) => {
         const messageId = event.headers?.messageId;
@@ -495,22 +500,147 @@ async makeMarkdownImage (data, file, summary = '图片') {
           this.makeLog(`Message received with messageId: ${messageId}`);
         }
 
-        let message = JSON.parse(event.data); // 解析 event.data
-        let content = (message?.text?.content || "").trim(); // 提取 content 变量
+        let message = JSON.parse(event.data);
+        let content = (message?.text?.content || "").trim();
 
-        this.makeMessage(event); // 调用 makeMessage 处理消息, 传入 event 对象
-
+        this.makeMessage(event);
 
         if (messageId) {
-          // 再次检查 messageId 是否存在 (虽然上面已经检查过，但为了代码更严谨，可以再次检查)
-          Dingclient.socketCallBackResponse(messageId); // 使用从 headers 中获取的 messageId 发送应答
+          Dingclient.socketCallBackResponse(messageId);
         }
 
-        return { status: EventAck.SUCCESS, message: "OK" }; // 返回成功应答 (保持不变)
+        return { status: EventAck.SUCCESS, message: "OK" };
       };
 
-      Dingclient.registerCallbackListener(TOPIC_ROBOT, onBotMessage) // 使用 this.Dingclient 实例
+      await Dingclient.registerCallbackListener(TOPIC_ROBOT, onBotMessage)
         .connect();
+
+      const id = this.id;
+      const bot = this.Dingclient;
+
+      if (!Bot[id]) {
+        Bot[id] = {
+          adapter: this,
+          sdk: bot,
+          info: await this.getBotInfo(),
+          uin: id,
+          get nickname() { return this.info?.nick },
+          get avatar() { return this.info?.avatarUrl },
+          version: {
+            id: this.id,
+            name: this.name,
+            version: this.version,
+          },
+          stat: { start_time: Date.now() / 1000 },
+
+          pickFriend: user_id => this.pickFriend(id, user_id),
+          get pickUser() { return this.pickFriend },
+
+          pickMember: (group_id, user_id) => this.pickMember(id, group_id, user_id),
+          pickGroup: group_id => this.pickGroup(id, group_id),
+
+          getGroupArray: () => this.getGroupArray(id),
+          getGroupList: () => this.getGroupList(id),
+          getGroupMap: () => this.getGroupMap(id),
+
+          fl: new Map(),
+          gl: new Map(),
+          gml: new Map(),
+        };
+
+        bot.on("message", data => this.makeMessage(data));
+        bot.on("event", data => this.makeEvent(id, data));
+
+        Bot.makeLog("mark", `${this.name}(${this.id}) ${this.version} 已连接`, id);
+        Bot.em(`connect.${id}`, { self_id: id });
+      }
+
+      return true;
+    }
+
+    // async makeEvent(id, data) {
+    //   Bot.makeLog("debug", `[DingDing ${id}] makeEvent 接收到事件:`, data);
+    //   // TODO: 实现处理各种事件的逻辑，例如群成员变动等
+    // }
+    //
+    // async _replyMessage(webhook, payload) {
+    //   try {
+    //     const response = await fetch(webhook, {
+    //       method: 'POST',
+    //       headers: {
+    //         'Content-Type': 'application/json'
+    //       },
+    //       body: JSON.stringify(payload)
+    //     });
+    //
+    //     if (!response.ok) {
+    //       const errorText = await response.text();
+    //       Bot.makeLog('error', '[DingDing] _replyMessage 发送失败:', response.status, response.statusText, errorText, 'Payload:', payload);
+    //     } else {
+    //       Bot.makeLog('debug', '[DingDing] _replyMessage 发送成功:', payload);
+    //     }
+    //   } catch (error) {
+    //     Bot.makeLog('error', '[DingDing] _replyMessage 请求错误:', error, 'Payload:', payload);
+    //   }
+    // }
+
+//     // TODO: 实现 pickFriend, pickMember, pickGroup, getGroupArray, getGroupList, getGroupMap 等方法
+//     async pickFriend(id, user_id) {
+//       // 实现获取好友对象逻辑
+//       return { sendMsg: async (msg) => console.log(`发送私聊消息给 ${user_id}:`, msg) };
+//     }
+//
+//     async pickMember(id, group_id, user_id) {
+//       // 实现获取群成员对象逻辑
+//       return { sendMsg: async (msg) => console.log(`在群组 ${group_id} 中发送消息给 ${user_id}:`, msg) };
+//     }
+//
+//     async pickGroup(id, group_id) {
+//       // 实现获取群组对象逻辑
+//       return { sendMsg: async (msg) => console.log(`在群组 ${group_id} 中发送消息:`, msg) };
+//     }
+//
+//     async getGroupArray(id) {
+//       // 实现获取群组列表逻辑
+//       return;
+//     }
+//
+//     async getGroupList(id) {
+//       // 实现获取群组 ID 列表逻辑
+//       return;
+//     }
+//
+//     async getGroupMap(id) {
+//       // 实现获取群组信息 Map 逻辑
+//       return new Map();
+//     }
+//   })(),
+// );
+//
+    async makeEvent(id, data) {
+      Bot.makeLog("debug", `[DingDing ${id}] makeEvent 接收到事件:`, data);
+      // TODO: 实现处理各种事件的逻辑，例如群成员变动等
+    }
+
+    async _replyMessage(webhook, payload) {
+      try {
+        const response = await fetch(webhook, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          Bot.makeLog('error', '[DingDing] _replyMessage 发送失败:', response.status, response.statusText, errorText, 'Payload:', payload);
+        } else {
+          Bot.makeLog('debug', '[DingDing] _replyMessage 发送成功:', payload);
+        }
+      } catch (error) {
+        Bot.makeLog('error', '[DingDing] _replyMessage 请求错误:', error, 'Payload:', payload);
+      }
     }
   })(),
 );
