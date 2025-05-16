@@ -23,7 +23,7 @@ git clone --depth=1 https://ghcdn.042999.xyz/https://github.com/XuF163/Yunzai-pl
 cd plugins/Ding-plugin && pnpm i
 ```
 ### 配置  
-  参阅[钉钉开发者后台](open-dev.dingtalk.com) ,选择stream格式；webhook模式暂不适配
+  参阅[钉钉开发者后台](https://open-dev.dingtalk.com) ,选择stream格式；webhook模式暂不适配
 
 ### 效果演示  
 
