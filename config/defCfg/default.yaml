@@ -1,15 +1,31 @@
-#钉钉配置项目
-clientId: ""
-clientSecret: ""
-webhook: "https://oapi.dingtalk.com/robot/sendBySession?session="
-#腾讯云对象存储，非必要不食用
-Bucket: ""
-Region: ""
-Key: ""
-SecretId: ""
-SecretKey: ""
-#钉盘密钥
-PanClient ID: ""
-PanClientSecret: ""
-appKey: ""
-appSecret: ""
+# C:\Users\X\Desktop\Bot-Dev\Yunzai\plugins\Ding-plugin\config\Cfg\dingding.yaml
+# 或者修改 default.yaml 内容如下
+
+# 钉钉适配器总开关，如果为 false，则不加载任何钉钉账号
+enableDingAdapter: true # 可以添加一个总开关
+
+# 钉钉机器人账号列表
+dingdingAccounts:
+  - accountId: "bot1" # 每个账号的唯一标识符 (自定义，例如 "main_bot", "test_bot")
+    clientId: "dingwiqfbqssxli1sc32" # 您的第一个机器人 Client ID
+    clientSecret: "j7jWFRj_foOIgs4d--b-vFldclpgtp7Dhu9MOGX0ecIKjlQ4kWiSjpYVapqUMISm" # 您的第一个机器人 Client Secret
+    webhook: "https://oapi.dingtalk.com/robot/sendBySession?session=" # 如果机器人有独立的默认webhook（通常 sessionWebhook 更常用）
+    botName: "钉钉机器人一号" # (可选) 自定义机器人名称，用于日志和显示
+    botAvatar: "" # (可选) 机器人头像URL
+    debug: false # (可选) 此账号是否开启debug日志
+    # toBotUpload: false # (可选) 是否尝试通过Yunzai其他bot实例上传图片
+    # markdownImgScale: 1.0 # (可选) markdown图片缩放比例
+    # appKey: "dingwiqfbqssxli1sc32" # (如果需要，与clientId通常一致)
+    # appSecret: "j7jWFRj_foOIgs4d--b-vFldclpgtp7Dhu9MOGX0ecIKjlQ4kWiSjpYVapqUMISm" # (如果需要，与clientSecret通常一致)
+
+  - accountId: "bot2" # 第二个账号示例 (取消注释并填写实际信息)
+    clientId: "dingo6quwriqdk37poct"
+    clientSecret: "oKeKZ_NFRSZyUhe5fM2MxvOHsBnWAIo_0UBvHAmKdgCb3Jcg6F32k6BK5hVZ3b3M"
+    webhook: "https://oapi.dingtalk.com/robot/sendBySession?session="
+    botName: "钉钉机器人二号"
+    botAvatar: ""
+    debug: false
+
+# 全局钉钉适配器配置 (如果某些配置是所有账号共享的)
+# debug: false # 全局 debug 开关，会被账户的 debug 设置覆盖
+# defaultWebhook: "global_webhook_if_any" # 全局默认 webhook
