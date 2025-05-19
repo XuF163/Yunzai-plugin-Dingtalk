@@ -1,265 +1,122 @@
-import Config from "../lib/config.js";
+// panupload.js
+import RootConfig from "../lib/config.js"; // 根配置，包含所有账户
 import imageSize from "image-size";
 
-/**
- * 钉钉图片上传工具类 (使用Bot框架的图片上传方法)
- */
 class DingTalkImageUploader {
+    // constructor 不再直接存 Config，因为配置是每个账号不同的
 
-    constructor() {
-        // 构造函数可以用来初始化配置，这里直接从 Config 中读取
-        this.config = Config; // 直接存储 Config 实例，方便后续使用
+    // 辅助函数，从 RootConfig.dingdingAccounts 中获取指定accountId的配置
+    _getAccountConfig(accountId) {
+        if (!accountId || !Array.isArray(RootConfig.dingdingAccounts)) {
+            return RootConfig; // 返回全局配置作为回退（或者 null/undefined）
+        }
+        const account = RootConfig.dingdingAccounts.find(acc => acc.accountId === accountId);
+        return account || RootConfig; // 如果找不到特定账户配置，返回全局配置
     }
 
-    async makeBotImage (file) {
-        if (this.config.toBotUpload) {
+    _getAccountIdFromSelfId(self_id_in_event) {
+        // 这个辅助函数应该与 Ding.js 中的一致，或者由 Ding.js 传递 accountId
+        if (typeof self_id_in_event === 'string' && self_id_in_event.startsWith(`DingDing_`)) {
+            return self_id_in_event.substring("DingDing_".length);
+        }
+        return null; // 或其他默认
+    }
+
+
+    async makeBotImage (fileBuffer, accountId) { // 需要 accountId
+        const accountConfig = this._getAccountConfig(accountId);
+        if (accountConfig.toBotUpload && fileBuffer instanceof Buffer) {
             for (const i of Bot.uin) {
-                if (!Bot[i].uploadImage) continue;
-                try {
-                    const image = await Bot[i].uploadImage(file);
-                    if (image.url) return image;
-                } catch (err) {
-                    Bot.makeLog('error', ['Bot', i, '钉钉图片上传错误(makeBotImage)', file, err]);
+                const botInstance = Bot[i];
+                if (botInstance && typeof botInstance.uploadImage === 'function') {
+                    try {
+                        const image = await botInstance.uploadImage(fileBuffer);
+                        if (image && image.url && typeof image.url === 'string' && image.url.startsWith('http')) {
+                           Bot.makeLog('debug', [`[panupload.js/makeBotImage] (Acc: ${accountId}) Successful via Bot`, i, image.url]);
+                           return image.url;
+                        }
+                    } catch (err) {
+                        Bot.makeLog('error', [`[panupload.js/makeBotImage] (Acc: ${accountId}) Bot`, i, 'upload error', err]);
+                    }
                 }
             }
         }
+        Bot.makeLog('debug', [`[panupload.js/makeBotImage] (Acc: ${accountId}) Could not upload via Bot instances.`]);
+        return undefined;
     }
 
-    async makeMarkdownImage (data, file, summary = '图片') {
-        const buffer = await Bot.Buffer(file);
-        const image =
-            await this.makeBotImage(file) ||
-            { url: await Bot.fileToUrl(file) };
+    async makeMarkdownImage (dataForLogContext, fileInfoFromAdapter, summary = '图片') {
+        const accountId = this._getAccountIdFromSelfId(dataForLogContext?.self_id); // 从上下文获取accountId
+        const accountConfig = this._getAccountConfig(accountId);
 
-        if (!image.width || !image.height) {
-            try {
-                const size = imageSize(buffer);
-                image.width = size.width;
-                image.height = size.height;
-            } catch (err) {
-                Bot.makeLog('error', ['图片分辨率检测错误(makeMarkdownImage)', file, err], data.self_id);
+        if (!fileInfoFromAdapter || !(fileInfoFromAdapter.buffer instanceof Buffer)) {
+            Bot.makeLog('error', [`[panupload.js/makeMarkdownImage] (Acc: ${accountId}) Invalid fileInfo or missing buffer.`, fileInfoFromAdapter]);
+            throw new Error("Invalid fileInfo or missing buffer for makeMarkdownImage.");
+        }
+
+        const imageBuffer = fileInfoFromAdapter.buffer;
+        const originalName = fileInfoFromAdapter.name || `image_${Date.now()}.png`;
+        let publicImageUrl;
+
+        try {
+            Bot.makeLog('debug', [`[panupload.js/makeMarkdownImage] (Acc: ${accountId}) Attempting Bot.fileToUrl with name:`, originalName]);
+            publicImageUrl = await Bot.fileToUrl(imageBuffer, { name: originalName });
+
+            if (!publicImageUrl || typeof publicImageUrl !== 'string' || !publicImageUrl.startsWith('http')) {
+                Bot.makeLog('warn', [`[panupload.js/makeMarkdownImage] (Acc: ${accountId}) Bot.fileToUrl did not return valid URL. Received:`, publicImageUrl, '. Trying makeBotImage fallback.']);
+                publicImageUrl = await this.makeBotImage(imageBuffer, accountId);
+            }
+        } catch (error) {
+            Bot.makeLog('error', [`[panupload.js/makeMarkdownImage] (Acc: ${accountId}) Error calling Bot.fileToUrl. Trying makeBotImage fallback.`, error]);
+            publicImageUrl = await this.makeBotImage(imageBuffer, accountId);
+        }
+
+        if (!publicImageUrl || typeof publicImageUrl !== 'string' || !publicImageUrl.startsWith('http')) {
+            const errMsg = `[panupload.js/makeMarkdownImage] (Acc: ${accountId}) Ultimately failed to get a valid public HTTP/HTTPS image URL.`;
+            Bot.makeLog('error', [errMsg, dataForLogContext?.self_id]);
+            throw new Error(errMsg);
+        }
+
+        Bot.makeLog('info', [`[panupload.js/makeMarkdownImage] (Acc: ${accountId}) Successfully obtained public image URL:`, publicImageUrl]);
+
+        const imageDetails = { url: publicImageUrl };
+        try {
+            const size = imageSize(imageBuffer);
+            imageDetails.width = size.width;
+            imageDetails.height = size.height;
+        } catch (err) {
+            Bot.makeLog('error', [`[panupload.js/makeMarkdownImage] (Acc: ${accountId}) imageSize error`, err]);
+        }
+
+        // 使用特定账户的配置，回退到全局配置，再回退到默认值
+        const scaleConfig = accountConfig.markdownImgScale !== undefined ? accountConfig.markdownImgScale : (RootConfig.markdownImgScale !== undefined ? RootConfig.markdownImgScale : 1.0);
+        if (imageDetails.width && imageDetails.height && scaleConfig) {
+            const scale = parseFloat(scaleConfig);
+            if (!isNaN(scale) && scale > 0) {
+                imageDetails.width = Math.floor(imageDetails.width * scale);
+                imageDetails.height = Math.floor(imageDetails.height * scale);
             }
         }
 
-        image.width = Math.floor(image.width * this.config.markdownImgScale); // 使用 this.config
-        image.height = Math.floor(image.height * this.config.markdownImgScale); // 使用 this.config
-
         return {
-            des: `![${summary} #${image.width || 0}px #${image.height || 0}px]`,
-            url: `(${image.url})`
+            des: `![${summary}]`,
+            url: `(${imageDetails.url})`
         };
     }
 
-
-    /**
-     * 图片转钉钉URL核心函数 (公共方法，供外部调用)
-     * @param {string|Buffer} imageInput 文件路径或图片Buffer
-     * @returns {Promise<string>} 图片的URL (media_id 或其他URL)
-     */
-    async imageToDingTalkUrl(imageInput) {
+    // dataForLogContext 包含 e.self_id 等信息，用于提取 accountId
+    async imageToDingTalkUrl(dataForLogContext, fileInfoParam) {
         try {
-            const imageMarkdown = await this.makeMarkdownImage({}, imageInput, '图片'); // 调用 makeMarkdownImage
-            return imageMarkdown.url; // 返回 markdown 结果中的 url
+            Bot.makeLog('debug', [`[panupload.js/imageToDingTalkUrl] Received context:`, dataForLogContext?.self_id, `fileInfo:`, fileInfoParam?.name]);
+            // 将 dataForLogContext 传递给 makeMarkdownImage
+            const imageMarkdown = await this.makeMarkdownImage(dataForLogContext, fileInfoParam, '图片');
+            return imageMarkdown.url;
         } catch (error) {
-            console.error('处理过程出错 (imageToDingTalkUrl):', error);
-            throw error; // 抛出错误，让调用者处理
+            const accountId = this._getAccountIdFromSelfId(dataForLogContext?.self_id);
+            console.error(`[panupload.js/imageToDingTalkUrl] (Acc: ${accountId}) Error:`, error.message || error);
+            throw error;
         }
     }
 }
 
 export default new DingTalkImageUploader();
-
-// import fetch from 'node-fetch';
-// import crypto from 'crypto';
-// import querystring from 'querystring';
-// import FormData from 'form-data';
-// import fs from 'fs';
-// import path from 'path';
-// import os from 'os'; //  !!! 添加 os 模块
-// import Config from "../lib/config.js";
-//
-// /**
-//  * 钉钉图片上传工具类
-//  */
-// class DingTalkImageUploader {
-//
-//     constructor() {
-//         // 构造函数可以用来初始化配置，这里直接从 Config 中读取，也可以选择在构造函数中传入 appkey 和 appsecret
-//         this.appKey = Config.AppKey;
-//         this.appSecret = Config.AppSecret;
-//     }
-//
-//     /**
-//      * 获取钉钉访问令牌 (私有方法，类内部使用)
-//      * @returns {Promise<string>} access_token
-//      * @private
-//      */
-//     async #getAccessToken() {
-//         const url = 'https://oapi.dingtalk.com/gettoken';
-//         const params = {
-//             appkey: this.appKey,
-//             appsecret: this.appSecret
-//         };
-//         const response = await fetch(`${url}?${querystring.stringify(params)}`);
-//         const data = await response.json();
-//         if (!response.ok) {
-//             throw new Error(`获取访问令牌失败: ${data.errmsg || response.statusText}`);
-//         }
-//         return data.access_token;
-//     }
-//
-//     /**
-//      * 上传文件到钉盘 (私有方法，类内部使用)
-//      * @param {string|Buffer} imageInput 文件路径或图片Buffer
-//      * @param {string} accessToken 钉钉访问令牌
-//      * @returns {Promise<string>} media_id
-//      * @private
-//      */
-//     async #uploadToDingTalk(imageInput, accessToken) {
-//         const url = 'https://oapi.dingtalk.com/media/upload';
-//         const formData = new FormData();
-//         formData.append('access_token', accessToken);
-//         formData.append('type', 'image');
-//
-//         let fileBuffer;
-//         if (Buffer.isBuffer(imageInput)) {
-//             fileBuffer = imageInput;
-//
-//             //  !!!  将 Buffer 暂存为临时文件  !!!
-//             const tempFilePath = path.join(os.tmpdir(), `temp_image_${Date.now()}.png`); //  生成临时文件路径
-//             await fs.promises.writeFile(tempFilePath, fileBuffer); // 将 Buffer 写入临时文件
-//
-//             //  !!!  使用临时文件路径上传  !!!
-//             formData.append('media', fs.createReadStream(tempFilePath)); // 使用 createReadStream 读取临时文件并添加到 formData
-//
-//         } else {
-//             const filePath = imageInput;
-//             if (!fs.existsSync(filePath)) {
-//                 throw new Error(`文件路径不存在: ${filePath}`);
-//             }
-//             fileBuffer = fs.readFileSync(filePath);
-//             formData.append('media', fileBuffer, { filename: path.basename(filePath) });
-//         }
-//
-//         const response = await fetch(url, {
-//             method: 'POST',
-//             body: formData,
-//         });
-//         const data = await response.json();
-//         if (!response.ok) {
-//             throw new Error(`上传文件到钉盘失败: ${data.errmsg || response.statusText}`);
-//         }
-//         return data.media_id;
-//     }
-//
-//     /**
-//      * 图片转钉钉URL核心函数 (公共方法，供外部调用)
-//      * @param {string|Buffer} imageInput 文件路径或图片Buffer
-//      * @returns {Promise<string>} 图片的URL (media_id)
-//      */
-//     async imageToDingTalkUrl(imageInput) {
-//         try {
-//             const accessToken = await this.#getAccessToken();
-//             const mediaId = await this.#uploadToDingTalk(imageInput, accessToken);
-//             return mediaId; // 直接返回 media_id，即图片的URL
-//         } catch (error) {
-//             console.error('处理过程出错:', error);
-//             throw error; // 抛出错误，让调用者处理
-//         }
-//     }
-// }
-//
-// export default new DingTalkImageUploader();
-// // import fetch from 'node-fetch';
-// // import crypto from 'crypto';
-// // import querystring from 'querystring';
-// // import FormData from 'form-data';
-// // import fs from 'fs';
-// // import path from 'path';
-// // import Config from "../lib/config.js";
-// //
-// // /**
-// //  * 钉钉图片上传工具类
-// //  */
-// // class DingTalkImageUploader {
-// //
-// //     constructor() {
-// //         // 构造函数可以用来初始化配置，这里直接从 Config 中读取，也可以选择在构造函数中传入 appkey 和 appsecret
-// //         this.appKey = Config.AppKey;
-// //         this.appSecret = Config.AppSecret;
-// //     }
-// //
-// //     /**
-// //      * 获取钉钉访问令牌 (私有方法，类内部使用)
-// //      * @returns {Promise<string>} access_token
-// //      * @private
-// //      */
-// //     async #getAccessToken() {
-// //         const url = 'https://oapi.dingtalk.com/gettoken';
-// //         const params = {
-// //             appkey: this.appKey,
-// //             appsecret: this.appSecret
-// //         };
-// //         const response = await fetch(`${url}?${querystring.stringify(params)}`);
-// //         const data = await response.json();
-// //         if (!response.ok) {
-// //             throw new Error(`获取访问令牌失败: ${data.errmsg || response.statusText}`);
-// //         }
-// //         return data.access_token;
-// //     }
-// //
-// //     /**
-// //      * 上传文件到钉盘 (私有方法，类内部使用)
-// //      * @param {string|Buffer} imageInput 文件路径或图片Buffer
-// //      * @param {string} accessToken 钉钉访问令牌
-// //      * @returns {Promise<string>} media_id
-// //      * @private
-// //      */
-// //     async #uploadToDingTalk(imageInput, accessToken) {
-// //         const url = 'https://oapi.dingtalk.com/media/upload';
-// //         const formData = new FormData();
-// //         formData.append('access_token', accessToken);
-// //         formData.append('type', 'image');
-// //
-// //         let fileBuffer;
-// //         if (Buffer.isBuffer(imageInput)) {
-// //             fileBuffer = imageInput;
-// //             formData.append('media', fileBuffer); // 移除 contentType 选项
-// //         } else {
-// //             const filePath = imageInput;
-// //             if (!fs.existsSync(filePath)) {
-// //                 throw new Error(`文件路径不存在: ${filePath}`);
-// //             }
-// //             fileBuffer = fs.readFileSync(filePath);
-// //             formData.append('media', fileBuffer, { filename: path.basename(filePath) });
-// //         }
-// //
-// //         const response = await fetch(url, {
-// //             method: 'POST',
-// //             body: formData,
-// //         });
-// //         const data = await response.json();
-// //         if (!response.ok) {
-// //             throw new Error(`上传文件到钉盘失败: ${data.errmsg || response.statusText}`);
-// //         }
-// //         return data.media_id;
-// //     }
-// //
-// //     /**
-// //      * 图片转钉钉URL核心函数 (公共方法，供外部调用)
-// //      * @param {string|Buffer} imageInput 文件路径或图片Buffer
-// //      * @returns {Promise<string>} 图片的URL (media_id)
-// //      */
-// //     async imageToDingTalkUrl(imageInput) {
-// //         try {
-// //             const accessToken = await this.#getAccessToken();
-// //             const mediaId = await this.#uploadToDingTalk(imageInput, accessToken);
-// //             return mediaId; // 直接返回 media_id，即图片的URL
-// //         } catch (error) {
-// //             console.error('处理过程出错:', error);
-// //             throw error; // 抛出错误，让调用者处理
-// //         }
-// //     }
-// // }
-// //
-// // export default new DingTalkImageUploader(); // 默认导出类

@@ -1,173 +1,174 @@
-// dingSender.js
+// sender.js
 import https from "https";
-import { EventAck } from "dingtalk-stream"; // 只需要 EventAck
-import fs from 'node:fs/promises';
-import path from "path";
-import sharp from 'sharp'; // 用于图片格式转换
-import Config from "../lib/config.js";
-import  DingTalkImageUploader  from "../model/panupload.js";
-// 导出 sendMsg 函数，用于发送文本消息
-export async function sendMsg(msg, sessionWebhook) {
-  // 接收 sessionWebhook 作为参数
-  const webhook = sessionWebhook;
+import { EventAck } from "dingtalk-stream";
+import RootConfig from "../lib/config.js"; // 使用 RootConfig 来访问账户列表或全局配置
+import DingTalkImageUploader from "../model/panupload.js";
 
+const logger = global.logger || Bot.logger || { info: console.log, error: console.error, debug: console.log, warn: console.warn };
+
+// 辅助函数，从 RootConfig.dingdingAccounts 中获取指定accountId的配置
+function getAccountConfigFromSelfId(self_id_in_event) {
+    if (!self_id_in_event || !Array.isArray(RootConfig.dingdingAccounts)) {
+        return RootConfig; // Fallback to global config or handle error
+    }
+    let accountId = null;
+    if (typeof self_id_in_event === 'string' && self_id_in_event.startsWith(`DingDing_`)) {
+        accountId = self_id_in_event.substring("DingDing_".length);
+    } else { // Attempt to find by clientId if self_id_in_event is a clientId
+        const foundByClientId = RootConfig.dingdingAccounts.find(acc => acc.clientId === self_id_in_event);
+        if (foundByClientId) accountId = foundByClientId.accountId;
+    }
+
+    if (!accountId) return RootConfig; // Fallback
+
+    const account = RootConfig.dingdingAccounts.find(acc => acc.accountId === accountId);
+    return account || RootConfig; // Fallback to global if specific account not found by parsed accountId
+}
+
+
+export async function sendMsg(msg, sessionWebhook, eventContext) { // eventContext 是原始事件 e
+  let webhook = sessionWebhook;
+  const accountConfig = eventContext ? getAccountConfigFromSelfId(eventContext.self_id) : RootConfig;
+
+  if (!webhook && accountConfig && accountConfig.webhook) {
+      webhook = accountConfig.webhook; // 使用特定账户的默认 webhook 作为回退
+  }
+  if (!webhook && RootConfig.defaultWebhook) { // 再回退到全局默认
+      webhook = RootConfig.defaultWebhook;
+  }
+
+  if (!webhook) {
+    logger.error(`[sendMsg] (Bot: ${eventContext?.self_id}) Webhook is undefined (session, account, or global). Cannot send message.`);
+    return Promise.reject({ status: EventAck.FAILURE, message: "Webhook not provided" });
+  }
 
   const responseMessage = {
     msgtype: "markdown",
     markdown: {
-      title: "消息外显new",
+      title: msg.substring(0,15) || "消息",
       text: `${msg}`,
     },
   };
 
-  try {
-    console.log("发送消息[消息模块]", responseMessage.markdown.text);
-  } catch (error) {
-    console.error("处理消息时出错", error);
-  }
+  logger.info(`[sendMsg] (Bot: ${eventContext?.self_id}) Preparing to send Markdown to webhook: ${webhook.substring(0, webhook.indexOf('?')) || webhook}... Text: ${responseMessage.markdown.text.substring(0,50)}...`);
+  const postData = JSON.stringify(responseMessage);
 
-  const data = JSON.stringify(responseMessage);
-  console.log("msg发送预备", responseMessage);
   const options = {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
   };
-  const req = https.request(webhook, options, (res) => {
-    console.log(`状态码: ${res.statusCode}`);
-    res.on("data", (d) => {
-      console.log("data:", d);
-    });
-  });
-  req.on("error", (error) => {
-    console.error(error);
-  });
-  req.write(data);
-  req.end();
-  return { status: EventAck.SUCCESS, message: "OK" };
-}
 
-
-
-
-  export async function sendMarkdownImage(data, file, sessionWebhook, summary = '图片') {
-    console.log("Debug - File parameter at sendMarkdownImage entry:"); //  !!!  添加日志： 打印进入 sendMarkdownImage 函数时 file 参数的完整结构
-  console.dir(file, { depth: null });
-  // 优先使用会话 Webhook，否则使用全局配置 webhook
-  const webhook = sessionWebhook || config.webhook;
-  logger.info('准备发送图片消息', file);
-
-  if (file) {
-    console.log("sendMarkdownImage - File parameter type:", typeof file); // 打印 file 参数类型
-    console.log("sendMarkdownImage - File object keys:", Object.keys(file)); // 打印 file 对象的 key
-  } else {
-    console.log("sendMarkdownImage - File parameter is null or undefined.");
-  }
-
-  let imageUrl = null; // 初始化 imageUrl
-  let imageBuffer = null; // 用于存储实际的 Buffer 数据
-
-  try {
-    // 检查 file 是否是 Buffer 对象
-    if (Buffer.isBuffer(file)) {
-      logger.info('sendMarkdownImage: 检测到 file 参数直接是 Buffer 数据');
-      imageBuffer = file; // 如果 file 本身就是 Buffer，直接使用
-    } else if (file && Buffer.isBuffer(file.buffer)) {
-      logger.info('sendMarkdownImage: 检测到 file.buffer 包含 Buffer 数据');
-      imageBuffer = file.buffer; // 如果 file 是对象且 file.buffer 是 Buffer，则使用 file.buffer
-    } else {
-      const errorMessage = 'sendMarkdownImage: 未检测到有效的图片 Buffer 数据，无法上传图片。';
-      console.warn(errorMessage);
-      return { status: 'FAILURE', message: errorMessage }; // 如果没有 Buffer 数据，则无法上传图片
-    }
-
-    // 确保 imageBuffer 存在有效的 Buffer 数据
-    if (imageBuffer && Buffer.isBuffer(imageBuffer)) {
-      logger.info('sendMarkdownImage: 准备上传图片 Buffer 数据到钉钉');
-      // 使用 dingTalkImageUploader 上传 Buffer 并获取 URL (使用 imageBuffer)
-      imageUrl = await DingTalkImageUploader.imageToDingTalkUrl(imageBuffer);
-
-      if (!imageUrl) {
-        const errorMessage = 'sendMarkdownImage: 使用 dingTalkImageUploader 上传图片失败，未获取到图片 URL。';
-        console.error(errorMessage);
-        return { status: 'FAILURE', message: errorMessage };
-      }
-      logger.info("sendMarkdownImage: 使用 dingTalkImageUploader 获取到图片URL:", imageUrl);
-
-    } else {
-      const errorMessage = 'sendMarkdownImage: 未检测到有效的图片 Buffer 数据，无法上传图片。 (imageBuffer 无效)';
-      console.warn(errorMessage);
-      return { status: 'FAILURE', message: errorMessage }; // 如果 imageBuffer 无效，则无法上传图片
-    }
-
-
-    // 构造 Markdown 消息体，使用 imageUrl 嵌入图片
-    const markdownMessage = {
-      msgtype: 'markdown',
-      markdown: {
-        title: summary,
-        text: `![${summary}]${imageUrl}\n`
-      }
-    };
-
-    logger.info("sendMarkdownImage: 发送Markdown图片消息 - 图片URL:", imageUrl);
-    logger.debug('sendMarkdownImage: 发送消息[消息模块]', markdownMessage);
-
-    const postData = JSON.stringify(markdownMessage);
-    logger.debug('sendMarkdownImage: msg发送预备', markdownMessage);
-
-    const options = {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      }
-    };
-
-    // 封装 HTTPS 请求，返回 Promise
-    return new Promise((resolve, reject) => {
-      const req = https.request(webhook, options, (res) => {
-        logger.debug(`sendMarkdownImage: 状态码: ${res.statusCode}`);
-        let responseData = '';
-        res.on('data', (chunk) => {
-          responseData += chunk;
-          logger.debug('sendMarkdownImage: data:', chunk.toString());
-        });
-        res.on('end', () => {
-          try {
-            const parsedResponse = JSON.parse(responseData);
-            logger.debug('sendMarkdownImage: 响应数据解析:', parsedResponse);
-            if (res.statusCode >= 200 && res.statusCode < 300) {
-              resolve({ status: EventAck.SUCCESS, message: 'OK', response: parsedResponse });
-            } else {
-              const error = new Error(`HTTP 请求失败，状态码: ${res.statusCode}, 响应数据: ${responseData}`);
-              logger.error('sendMarkdownImage: 钉钉API请求失败', error);
-              reject({ status: EventAck.FAILURE, message: '钉钉API请求失败', error: error });
-            }
-          } catch (parseError) {
-            logger.error('sendMarkdownImage: JSON 解析错误', parseError, responseData);
-            reject({ status: EventAck.FAILURE, message: 'JSON 解析错误', error: parseError });
+  return new Promise((resolve, reject) => {
+    const req = https.request(webhook, options, (res) => {
+      let responseBody = "";
+      res.on("data", (chunk) => responseBody += chunk);
+      res.on("end", () => {
+        logger.debug(`[sendMsg] (Bot: ${eventContext?.self_id}) HTTP Status: ${res.statusCode}. Raw Response: ${responseBody.substring(0,200)}`);
+        try {
+          const parsedResponse = JSON.parse(responseBody);
+          if (res.statusCode >= 200 && res.statusCode < 300 && parsedResponse.errcode === 0) {
+            logger.info(`[sendMsg] (Bot: ${eventContext?.self_id}) Message sent successfully via Markdown.`);
+            resolve({ status: EventAck.SUCCESS, message: "OK", response: parsedResponse });
+          } else {
+            const errMsg = parsedResponse.errmsg || `HTTP Error ${res.statusCode}`;
+            logger.error(`[sendMsg] (Bot: ${eventContext?.self_id}) DingTalk API Error: ${errMsg}. Full Response:`, parsedResponse);
+            reject({ status: EventAck.FAILURE, message: `DingTalk API Error: ${errMsg}`, response: parsedResponse, error: new Error(errMsg) });
           }
-        });
+        } catch (e) {
+          logger.error(`[sendMsg] (Bot: ${eventContext?.self_id}) Failed to parse JSON response from DingTalk.`, e, "Raw Body:", responseBody);
+          reject({ status: EventAck.FAILURE, message: "Failed to parse DingTalk JSON response", error: e, rawResponse: responseBody });
+        }
       });
-
-      req.on('error', (error) => {
-        logger.error('sendMarkdownImage: HTTPS 请求错误', error);
-        reject({ status: 'EventAck.FAILURE', message: 'HTTPS 请求错误', error: error });
-      });
-
-      req.write(postData);
-      req.end();
     });
-  }
-  catch (error) { // 推荐
-    console.error('sendMarkdownImage: Error processing image in sendMarkdownImage:', error);
-    return { status: 'FAILURE', message: 'Error processing image', error: error.message };
-  }
+    req.on("error", (error) => {
+      logger.error(`[sendMsg] (Bot: ${eventContext?.self_id}) HTTPS Request Error:`, error);
+      reject({ status: EventAck.FAILURE, message: "HTTPS Request Error", error });
+    });
+    req.write(postData);
+    req.end();
+  });
 }
 
+// dataForLogContext 是原始事件 e，包含了 e.self_id
+export async function sendMarkdownImage(dataForLogContext, fileInfoFromAdapter, sessionWebhook, summary = '图片') {
+  let webhook = sessionWebhook;
+  const accountConfig = dataForLogContext ? getAccountConfigFromSelfId(dataForLogContext.self_id) : RootConfig;
 
+  if (!webhook && accountConfig && accountConfig.webhook) {
+      webhook = accountConfig.webhook;
+  }
+  if (!webhook && RootConfig.defaultWebhook) { // 使用全局RootConfig访问
+      webhook = RootConfig.defaultWebhook;
+  }
 
+  if (!webhook) {
+    logger.error(`[sendMarkdownImage] (Bot: ${dataForLogContext?.self_id}) Webhook is undefined. Cannot send image.`);
+    return { status: EventAck.FAILURE, message: "Webhook not provided for image sending" };
+  }
 
+  logger.info(`[sendMarkdownImage] (Bot: ${dataForLogContext?.self_id}) Preparing image. fileInfo name:`, fileInfoFromAdapter?.name);
 
+  let imageUrlWithParentheses;
+  try {
+    // 将 dataForLogContext 传递给 imageToDingTalkUrl 以便 panupload 内部获取 accountId
+    imageUrlWithParentheses = await DingTalkImageUploader.imageToDingTalkUrl(dataForLogContext, fileInfoFromAdapter);
 
+    if (!imageUrlWithParentheses || typeof imageUrlWithParentheses !== 'string' || !imageUrlWithParentheses.startsWith('(') || !imageUrlWithParentheses.endsWith(')')) {
+      const errorMessage = `[sendMarkdownImage] (Bot: ${dataForLogContext?.self_id}) Failed to get valid markdown image URL. Received: ${imageUrlWithParentheses}`;
+      logger.error(errorMessage);
+      return { status: EventAck.FAILURE, message: errorMessage };
+    }
+    logger.info(`[sendMarkdownImage] (Bot: ${dataForLogContext?.self_id}) Obtained markdown image URL:`, imageUrlWithParentheses);
+
+  } catch (error) {
+    logger.error(`[sendMarkdownImage] (Bot: ${dataForLogContext?.self_id}) Error obtaining image URL from Uploader:`, error);
+    return { status: EventAck.FAILURE, message: `Error preparing image URL: ${error.message || error.toString()}` };
+  }
+
+  const markdownMessage = {
+    msgtype: 'markdown',
+    markdown: {
+      title: summary,
+      text: `![${summary}]${imageUrlWithParentheses}\n`
+    }
+  };
+
+  logger.info(`[sendMarkdownImage] (Bot: ${dataForLogContext?.self_id}) Sending Markdown with image to ${webhook.substring(0,webhook.indexOf("?")) || webhook}. URL part:`, imageUrlWithParentheses);
+
+  const postData = JSON.stringify(markdownMessage);
+  const options = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  };
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(webhook, options, (res) => {
+      logger.debug(`[sendMarkdownImage] (Bot: ${dataForLogContext?.self_id}) HTTP Status: ${res.statusCode}`);
+      let responseData = '';
+      res.on('data', (chunk) => { responseData += chunk; });
+      res.on('end', () => {
+        logger.debug(`[sendMarkdownImage] (Bot: ${dataForLogContext?.self_id}) Raw HTTP Response: ${responseData.substring(0,200)}`);
+        try {
+          const parsedResponse = JSON.parse(responseData);
+          if (res.statusCode >= 200 && res.statusCode < 300 && parsedResponse.errcode === 0) {
+            logger.info(`[sendMarkdownImage] (Bot: ${dataForLogContext?.self_id}) Markdown image sent successfully.`);
+            resolve({ status: EventAck.SUCCESS, message: 'OK', response: parsedResponse });
+          } else {
+            const errMsg = parsedResponse.errmsg || `HTTP status ${res.statusCode}`;
+            logger.error(`[sendMarkdownImage] (Bot: ${dataForLogContext?.self_id}) DingTalk API error: ${errMsg}. Full response:`, parsedResponse);
+            reject({ status: EventAck.FAILURE, message: `DingTalk API error: ${errMsg}`, response: parsedResponse, error: new Error(errMsg) });
+          }
+        } catch (parseError) {
+          logger.error(`[sendMarkdownImage] (Bot: ${dataForLogContext?.self_id}) Failed to parse JSON response from DingTalk.`, parseError, 'Raw data:', responseData);
+          reject({ status: EventAck.FAILURE, message: 'JSON parse error from DingTalk response.', error: parseError, rawResponse: responseData });
+        }
+      });
+    });
+    req.on('error', (error) => {
+      logger.error(`[sendMarkdownImage] (Bot: ${dataForLogContext?.self_id}) HTTPS request failed.`, error);
+      reject({ status: EventAck.FAILURE, message: 'HTTPS request failed.', error: error });
+    });
+    req.write(postData);
+    req.end();
+  });
+}
