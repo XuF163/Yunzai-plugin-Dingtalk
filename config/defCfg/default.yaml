@@ -1,11 +1,11 @@
-# Ding-plugin 默认配置文件 (v2)
-# 注意：旧版字段已停止支持
+# Ding-plugin 默认配置文件
+
 
 enableDingAdapter: true
 
 dingdingAccounts:
-  - accountId: "bot1"              # 唯一账号标识符（必填）
-    clientId: "dingcccccccccc3" # 钉钉AppKey
-    clientSecret: "j7jWFRj_foOIgs4d--b-vsadfghjku,limnbvcdsfghkmjnhgbfvd" # 钉钉AppSecret
+  - accountId: ""              # 唯一账号标识符（必填）
+    clientId: "" # 钉钉AppKey
+    clientSecret: "" # 钉钉AppSecret
     webhook: "https://oapi.dingtalk.com/robot/sendBySession?session="
     debug: false

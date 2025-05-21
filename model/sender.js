@@ -4,8 +4,6 @@ import { EventAck } from "dingtalk-stream";
 import RootConfig from "../lib/config.js"; // 使用 RootConfig 来访问账户列表或全局配置
 import DingTalkImageUploader from "../model/panupload.js";
 
-const logger = global.logger || Bot.logger || { info: console.log, error: console.error, debug: console.log, warn: console.warn };
-
 // 辅助函数，从 RootConfig.dingdingAccounts 中获取指定accountId的配置
 function getAccountConfigFromSelfId(self_id_in_event) {
     if (!self_id_in_event || !Array.isArray(RootConfig.dingdingAccounts)) {
@@ -38,7 +36,7 @@ export async function sendMsg(msg, sessionWebhook, eventContext) { // eventConte
   }
 
   if (!webhook) {
-    logger.error(`[sendMsg] (Bot: ${eventContext?.self_id}) Webhook is undefined (session, account, or global). Cannot send message.`);
+    logger.error(`[发送消息] (Bot: ${eventContext?.self_id}) Webhook is undefined (session, account, or global). Cannot send message.`);
     return Promise.reject({ status: EventAck.FAILURE, message: "Webhook not provided" });
   }
 
@@ -50,7 +48,7 @@ export async function sendMsg(msg, sessionWebhook, eventContext) { // eventConte
     },
   };
 
-  logger.info(`[sendMsg] (Bot: ${eventContext?.self_id}) Preparing to send Markdown to webhook: ${webhook.substring(0, webhook.indexOf('?')) || webhook}... Text: ${responseMessage.markdown.text.substring(0,50)}...`);
+ // logger.info(`[发送消息] (Bot: ${eventContext?.self_id}) Preparing to send Markdown to webhook: ${webhook.substring(0, webhook.indexOf('?')) || webhook}... Text: ${responseMessage.markdown.text.substring(0,50)}...`);
   const postData = JSON.stringify(responseMessage);
 
   const options = {
@@ -63,25 +61,25 @@ export async function sendMsg(msg, sessionWebhook, eventContext) { // eventConte
       let responseBody = "";
       res.on("data", (chunk) => responseBody += chunk);
       res.on("end", () => {
-        logger.debug(`[sendMsg] (Bot: ${eventContext?.self_id}) HTTP Status: ${res.statusCode}. Raw Response: ${responseBody.substring(0,200)}`);
+        //logger.debug(`[发送消息] (Bot: ${eventContext?.self_id}) HTTP Status: ${res.statusCode}. Raw Response: ${responseBody.substring(0,200)}`);
         try {
           const parsedResponse = JSON.parse(responseBody);
           if (res.statusCode >= 200 && res.statusCode < 300 && parsedResponse.errcode === 0) {
-            logger.info(`[sendMsg] (Bot: ${eventContext?.self_id}) Message sent successfully via Markdown.`);
+            logger.info(`[发送消息] (Bot: ${eventContext?.self_id}) Message sent successfully via Markdown.`);
             resolve({ status: EventAck.SUCCESS, message: "OK", response: parsedResponse });
           } else {
             const errMsg = parsedResponse.errmsg || `HTTP Error ${res.statusCode}`;
-            logger.error(`[sendMsg] (Bot: ${eventContext?.self_id}) DingTalk API Error: ${errMsg}. Full Response:`, parsedResponse);
+            logger.error(`[发送消息] (Bot: ${eventContext?.self_id}) DingTalk API Error: ${errMsg}. Full Response:`, parsedResponse);
             reject({ status: EventAck.FAILURE, message: `DingTalk API Error: ${errMsg}`, response: parsedResponse, error: new Error(errMsg) });
           }
         } catch (e) {
-          logger.error(`[sendMsg] (Bot: ${eventContext?.self_id}) Failed to parse JSON response from DingTalk.`, e, "Raw Body:", responseBody);
+          logger.error(`[发送消息] (Bot: ${eventContext?.self_id}) Failed to parse JSON response from DingTalk.`, e, "Raw Body:", responseBody);
           reject({ status: EventAck.FAILURE, message: "Failed to parse DingTalk JSON response", error: e, rawResponse: responseBody });
         }
       });
     });
     req.on("error", (error) => {
-      logger.error(`[sendMsg] (Bot: ${eventContext?.self_id}) HTTPS Request Error:`, error);
+      logger.error(`[发送消息] (Bot: ${eventContext?.self_id}) HTTPS Request Error:`, error);
       reject({ status: EventAck.FAILURE, message: "HTTPS Request Error", error });
     });
     req.write(postData);

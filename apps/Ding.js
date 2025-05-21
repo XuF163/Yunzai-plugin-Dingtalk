@@ -1,32 +1,29 @@
-// Ding.js (适配器主逻辑文件 - 多账号版本 v0.6.5 - 无应用层去重, 修正回调注册)
-
-import RootConfig from "../lib/config.js"; // 导入根配置对象，它包含了所有配置
+import RootConfig from "../lib/config.js";
 import { DWClient, EventAck, TOPIC_ROBOT } from "dingtalk-stream";
-import fs from "node:fs/promises"; // 保留，Bot.fileType 内部可能使用
+import fs from "node:fs/promises"; 
 import { sendMarkdownImage, sendMsg } from "../model/sender.js";
-import path from "node:path"; // 保留，路径操作可能需要
+import path from "node:path";
 
-// DingDingMultiAccountAdapter 类定义
+
 class DingDingMultiAccountAdapter {
   constructor() {
-    this.id = "DingDing"; // 主适配器的固定ID (Yunzai识别适配器类型用)
-    this.name = "DingDing Multi-Account Adapter"; // 主适配器的名称
-    this.version = `v0.6.5`; // 版本迭代
-    this.logger = Bot.logger; // 全局logger
-    this.managedAccounts = new Map(); // K: accountId (e.g., "bot1"), V: { config, dwClient, botGlobalEntryKey }
+    this.id = "DingDing"; 
+    this.name = " Adapter "; 
+    this.version = `v0.6.5`; 
+    this.managedAccounts = new Map(); 
   }
 
-  // 日志函数，第一个参数是accountId，用于区分日志来源
+
   makeLog(level, accountId, ...args) {
-    const instanceName = accountId ? `DingDing_${accountId}` : this.name;
+    const instanceName = accountId ? `${accountId}` : this.name;
     let msg = args.map(arg => Bot.String(arg)).join(" ");
     msg = msg.replace(/base64:\/\/.*?([,\]"])/g, "base64://...$1");
 
     if (typeof level === 'string' && Bot.makeLog) {
-      Bot.makeLog(level, `${msg}`, instanceName, true);
+      Bot.makeLog(level, msg, instanceName, true);
     } else {
       const time = new Date().toLocaleTimeString();
-      console.log(`[${time}][${level.toUpperCase() || 'INFO'}][${instanceName}] ${msg}`);
+      logger.info(`[${time}][${level.toUpperCase() || 'INFO'}][${instanceName}] ${msg}`);
     }
   }
 
@@ -39,40 +36,40 @@ class DingDingMultiAccountAdapter {
             return accId;
         }
     }
-    this.makeLog("warn", null, `[getAccountIdFromSelfId] Cannot parse accountId from self_id: ${self_id_in_event}`);
+    this.makeLog("warn", null, `[获取账号ID] 无法从 self_id 解析账号ID: ${self_id_in_event}`);
     return null;
   }
 
   async sendFriendMsg(data, msg) {
     const accountId = this.getAccountIdFromSelfId(data.self_id);
     if (!accountId) {
-        this.makeLog("error", data.self_id, "[sendFriendMsg] Could not determine accountId.");
+        this.makeLog("error", data.self_id, "[发送私聊] 无法确定账号ID。");
         return false;
     }
-    this.makeLog("debug", accountId, `[sendFriendMsg] To: ${data.user_id}. Bot: ${data.self_id}. Msg:`, msg);
+    this.makeLog("debug", accountId, `[发送私聊] 发送至: ${data.user_id}. Bot: ${data.self_id}. 消息:`, msg);
     return this._sendDingDingMsg("private", data, msg, accountId);
   }
 
   async sendGroupMsg(data, msg) {
     const accountId = this.getAccountIdFromSelfId(data.self_id);
     if (!accountId) {
-        this.makeLog("error", data.self_id, "[sendGroupMsg] Could not determine accountId.");
+        this.makeLog("error", data.self_id, "[发送群聊] 无法确定账号ID。");
         return false;
     }
-    this.makeLog("debug", accountId, `[sendGroupMsg] To Group: ${data.group_id}. Bot: ${data.self_id}. Msg:`, msg);
+    this.makeLog("debug", accountId, `[发送群聊] 发送至群: ${data.group_id}. Bot: ${data.self_id}. 消息:`, msg);
     return this._sendDingDingMsg("group", data, msg, accountId);
   }
 
   async _sendDingDingMsg(type, data, msg, accountId) {
     const sendRequestId = Math.random().toString(36).substring(2, 8);
-    this.makeLog("debug", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] Type: ${type}, For bot: ${accountId}, Event self_id: ${data.self_id}`);
+   // this.makeLog("debug", accountId, `[发送请求:${sendRequestId}] 类型: ${type}, Bot: ${accountId}, 事件 self_id: ${data.self_id}`);
 
     const accountEntry = this.managedAccounts.get(accountId);
     if (!accountEntry) {
-        this.makeLog("error", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] Account ${accountId} not found.`);
+       // this.makeLog("error", accountId, `[发送请求:${sendRequestId}] 账号 ${accountId} 未找到。`);
         return false;
     }
-    this.makeLog("debug", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] Incoming msg:`, msg);
+   //this.makeLog("debug", accountId, `[发送请求:${sendRequestId}] 消息:`, msg);
     if (!Array.isArray(msg)) msg = [msg];
 
     let combinedText = [];
@@ -85,7 +82,7 @@ class DingDingMultiAccountAdapter {
       }
 
       if (currentSegment.type === "button") {
-        this.makeLog("debug", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] Ignoring button segment:`, currentSegment);
+     //   this.makeLog("debug", accountId, `[发送请求:${sendRequestId}] 忽略按钮段:`, currentSegment);
         continue;
       }
 
@@ -93,15 +90,15 @@ class DingDingMultiAccountAdapter {
       if (currentSegment.file) {
         try {
           fileInfo = await Bot.fileType({ file: currentSegment.file, name: currentSegment.name });
-          this.makeLog("debug", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] Bot.fileType result:`, fileInfo);
+       //   this.makeLog("debug", accountId, `[发送请求:${sendRequestId}] Bot.fileType 结果:`, fileInfo);
           if (!(fileInfo?.buffer instanceof Buffer)) {
-            this.makeLog("warn", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] Invalid Buffer from Bot.fileType:`, fileInfo);
+       //     this.makeLog("warn", accountId, `[发送请求:${sendRequestId}] Bot.fileType 返回无效 Buffer:`, fileInfo);
             fileInfo = null;
           } else {
-            this.makeLog("info", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] Buffer obtained (name: ${fileInfo.name}, size: ${fileInfo.buffer.length} bytes)`);
+      //      this.makeLog("info", accountId, `[发送请求:${sendRequestId}] 获取到 Buffer (名称: ${fileInfo.name}, 大小: ${fileInfo.buffer.length} 字节)`);
           }
         } catch (error) {
-          this.makeLog("error", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] Bot.fileType Error:`, error);
+       //   this.makeLog("error", accountId, `[发送请求:${sendRequestId}] Bot.fileType 错误:`, error);
           fileInfo = null;
         }
       }
@@ -112,22 +109,22 @@ class DingDingMultiAccountAdapter {
           break;
         case "image":
           if (fileInfo && fileInfo.buffer instanceof Buffer && data.sessionWebhook) {
-            this.makeLog("info", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] Sending image (original name: ${fileInfo.name})`);
+          //  this.makeLog("info", accountId, `[发送请求:${sendRequestId}] 发送图片 (原名称: ${fileInfo.name})`);
             try {
               const imageSendResponse = await sendMarkdownImage(data, fileInfo, data.sessionWebhook, currentSegment.summary || '图片');
               if (imageSendResponse && imageSendResponse.status === EventAck.SUCCESS) {
                 hasNonTextContentSuccessfullySent = true;
-                this.makeLog("info", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] Markdown image sent successfully. Response:`, imageSendResponse.response);
+            //    this.makeLog("info", accountId, `[发送请求:${sendRequestId}] Markdown 图片发送成功。响应:`, imageSendResponse.response);
               } else {
-                this.makeLog("warn", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] Markdown image send failed. Details:`, imageSendResponse);
+            //    this.makeLog("warn", accountId, `[发送请求:${sendRequestId}] Markdown 图片发送失败。详情:`, imageSendResponse);
                 if (currentSegment.text) combinedText.push(currentSegment.text);
               }
             } catch (error) {
-               this.makeLog("error", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] Exception calling sendMarkdownImage: `, error);
+               this.makeLog("error", accountId, `[发送请求:${sendRequestId}] 调用 sendMarkdownImage 异常: `, error);
                if (currentSegment.text) combinedText.push(currentSegment.text);
             }
           } else {
-            this.makeLog("warn", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] Image buffer invalid or sessionWebhook missing. fileInfo:`, fileInfo, `sessionWebhook:`, data.sessionWebhook);
+            this.makeLog("warn", accountId, `[发送请求:${sendRequestId}] 图片 Buffer 无效或 sessionWebhook 缺失。fileInfo:`, fileInfo, `sessionWebhook:`, data.sessionWebhook);
             if (currentSegment.text) combinedText.push(currentSegment.text);
           }
           break;
@@ -137,10 +134,10 @@ class DingDingMultiAccountAdapter {
           if (fileInfo?.buffer) {
             const fallbackText = `[${currentSegment.type} 文件: ${fileInfo.name || '未知文件'} (暂未支持直接发送)]`;
             combinedText.push(fallbackText);
-            this.makeLog("info", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] Fallback for ${currentSegment.type}: ${fallbackText}`);
+            this.makeLog("info", accountId, `[发送请求:${sendRequestId}] ${currentSegment.type} 回退: ${fallbackText}`);
             hasNonTextContentSuccessfullySent = true;
           } else {
-            this.makeLog("warn", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] ${currentSegment.type} info incomplete`, currentSegment);
+            this.makeLog("warn", accountId, `[发送请求:${sendRequestId}] ${currentSegment.type} 信息不完整`, currentSegment);
             if (currentSegment.text) combinedText.push(currentSegment.text);
           }
           break;
@@ -161,7 +158,7 @@ class DingDingMultiAccountAdapter {
           hasNonTextContentSuccessfullySent = true;
           break;
         default:
-          this.makeLog("warn", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] Unknown segment type:`, currentSegment);
+          this.makeLog("warn", accountId, `[发送请求:${sendRequestId}] 未知消息段类型:`, currentSegment);
           if (currentSegment.text) combinedText.push(currentSegment.text);
       }
     }
@@ -172,59 +169,59 @@ class DingDingMultiAccountAdapter {
     if (textContent) {
         const webhookToSend = data.sessionWebhook || accountEntry.config.webhook;
         if (!webhookToSend) {
-            this.makeLog("error", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] Webhook undefined. Cannot send text.`);
+            this.makeLog("error", accountId, `[发送请求:${sendRequestId}] Webhook 未定义。无法发送文本。`);
         } else {
-            this.makeLog("debug", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] Sending ${type} text (via sendMsg) to webhook: ${webhookToSend.split("?")[0]}... Content: ${textContent.substring(0,50)}...`);
+         //   this.makeLog("debug", accountId, `[发送请求:${sendRequestId}] 发送 ${type} 文本 (通过 sendMsg) 到 webhook: ${webhookToSend.split("?")[0]}... 内容: ${textContent.substring(0,50)}...`);
             try {
                 // Pass original event `data` (which is `e` from makeMessage) as eventContext to sendMsg
                 const sendResult = await sendMsg(textContent, webhookToSend, data);
                 if (sendResult && sendResult.status === EventAck.SUCCESS) {
                     textSentSuccessfully = true;
-                    this.makeLog("info", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] Text (Markdown) sent successfully via sendMsg.`);
+              //      this.makeLog("info", accountId, `[发送请求:${sendRequestId}] 文本 (Markdown) 通过 sendMsg 发送成功。`);
                 } else {
-                     this.makeLog("warn", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] sendMsg returned non-SUCCESS. Details:`, sendResult);
+                     this.makeLog("warn", accountId, `[发送请求:${sendRequestId}] sendMsg 返回非 SUCCESS。详情:`, sendResult);
                 }
             } catch (error) {
-                this.makeLog("error", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] Error calling sendMsg:`, error);
+                this.makeLog("error", accountId, `[发送请求:${sendRequestId}] 调用 sendMsg 错误:`, error);
             }
         }
     }
 
     if (textSentSuccessfully || hasNonTextContentSuccessfullySent) {
-      this.makeLog("info", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] Operation successful (text: ${textSentSuccessfully}, non-text: ${hasNonTextContentSuccessfullySent}).`);
+    //  this.makeLog("info", accountId, `[发送请求:${sendRequestId}] 操作成功 (文本: ${textSentSuccessfully}, 非文本: ${hasNonTextContentSuccessfullySent})。`);
       return { message_id: `${accountEntry.botGlobalEntryKey}_${sendRequestId}` };
     } else {
-      this.makeLog("warn", accountId, `[SEND_REQ:${sendRequestId}] [_sendDingDingMsg] No content successfully sent.`);
+      this.makeLog("warn", accountId, `[发送请求:${sendRequestId}] 没有内容成功发送。`);
       return false;
     }
   }
 
   // This method is kept for direct payload sending if ever needed, but sendMsg/sendMarkdownImage are preferred.
   async _replyMessage(accountId, webhook, payload) {
-    this.makeLog('debug', accountId, '[_replyMessage] Attempting to send payload:', payload, 'to webhook:', webhook ? webhook.split("?")[0] : "UNDEFINED");
-    if (!webhook) { this.makeLog('error', accountId, '[_replyMessage] Webhook URL undefined.'); return false; }
+    this.makeLog('debug', accountId, '[_replyMessage] 尝试发送 payload:', payload, '到 webhook:', webhook ? webhook.split("?")[0] : "UNDEFINED");
+    if (!webhook) { this.makeLog('error', accountId, '[_replyMessage] Webhook URL 未定义。'); return false; }
     try {
       const response = await fetch(webhook, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const responseText = await response.text();
-      this.makeLog('debug', accountId, `[_replyMessage] HTTP Status: ${response.status}. Raw Resp: ${responseText.substring(0,100)}`);
+      this.makeLog('debug', accountId, `[_replyMessage] HTTP 状态: ${response.status}. 原始响应: ${responseText.substring(0,100)}`);
       if (response.ok) {
         const responseData = JSON.parse(responseText);
-        if (responseData.errcode === 0) { this.makeLog('debug', accountId, '[_replyMessage] Success (deprecated path).'); return true; }
-        else { this.makeLog('error', accountId, '[_replyMessage] Failed (deprecated path). DingTalk Error:', responseData); return false; }
-      } else { this.makeLog('error', accountId, `[_replyMessage] HTTP Error (deprecated path): ${response.status}`); return false; }
-    } catch (error) { this.makeLog('error', accountId, '[_replyMessage] Request exception (deprecated path):', error); return false; }
+        if (responseData.errcode === 0) { this.makeLog('debug', accountId, '[_replyMessage] 成功 (已废弃路径)。'); return true; }
+        else { this.makeLog('error', accountId, '[_replyMessage] 失败 (已废弃路径)。钉钉错误:', responseData); return false; }
+      } else { this.makeLog('error', accountId, `[_replyMessage] HTTP 错误 (已废弃路径): ${response.status}`); return false; }
+    } catch (error) { this.makeLog('error', accountId, '[_replyMessage] 请求异常 (已废弃路径):', error); return false; }
   }
 
   makeMessage(event, accountId, accountConfig) {
     const botGlobalEntryKey = `${this.id}_${accountId}`;
     const rawDataString = event.data.toString();
-    this.makeLog("debug", accountId, `[makeMessage] Raw event for ${botGlobalEntryKey}: ${rawDataString.substring(0,100)}...`);
+    this.makeLog("debug", accountId, `[构建消息] ${botGlobalEntryKey} 的原始事件: ${rawDataString.substring(0,100)}...`);
     
     let parsedData;
     try { parsedData = JSON.parse(rawDataString); }
-    catch (e) { this.makeLog("error", accountId, `[makeMessage] JSON parse error: ${e}. Raw: ${rawDataString}`); return; }
+    catch (e) { this.makeLog("error", accountId, `[构建消息] JSON 解析错误: ${e}. 原始数据: ${rawDataString}`); return; }
 
-    if (!parsedData) { this.makeLog("warn", accountId, "[makeMessage] Parsed data empty."); return; }
+    if (!parsedData) { this.makeLog("warn", accountId, "[构建消息] 解析数据为空。"); return; }
     
     const e = {
       post_type: "message",
@@ -256,25 +253,25 @@ class DingDingMultiAccountAdapter {
       if (Array.isArray(parsedData.atUsers)) {
           e.atme = parsedData.atUsers.some(atUser => atUser.dingtalkId === parsedData.chatbotUserId);
       }
-      this.makeLog("info", accountId, `[makeMessage] Group Msg from ${e.group_name}(GID:${e.group_id.substring(0,10)}...) by ${e.sender.nickname}(UID:${e.user_id.substring(e.user_id.length-10)}): ${e.raw_message.substring(0,30)}... AtMe: ${e.atme}`);
+      this.makeLog("info", accountId, `[构建消息] 群消息来自 ${e.group_name}(GID:${e.group_id.substring(0,10)}...) 由 ${e.sender.nickname}(UID:${e.user_id.substring(e.user_id.length-10)}) 发送: ${e.raw_message.substring(0,30)}... @我: ${e.atme}`);
       Bot.em(`message.group`, e);
     } else if (e.message_type === "private") {
-      this.makeLog("info", accountId, `[makeMessage] Private Msg from ${e.sender.nickname}(UID:${e.user_id.substring(e.user_id.length-10)}): ${e.raw_message.substring(0,30)}...`);
+      this.makeLog("info", accountId, `[构建消息] 私聊消息来自 ${e.sender.nickname}(UID:${e.user_id.substring(e.user_id.length-10)}): ${e.raw_message.substring(0,30)}...`);
       Bot.em(`message.private`, e);
     } else {
-        this.makeLog("warn", accountId, `[makeMessage] Unknown msg type: ${parsedData.conversationType}`);
+        this.makeLog("warn", accountId, `[构建消息] 未知消息类型: ${parsedData.conversationType}`);
         Bot.em(`message.dingding.unknown.${botGlobalEntryKey}`, e);
     }
 
     e.reply = async (msg, quote = false) => {
       const replyReqId = Math.random().toString(36).substring(2, 8);
-      this.makeLog("debug", accountId, `[e.reply REQ:${replyReqId}] Bot: ${accountId}, Original type: ${e.message_type}, SessionWebhook: ${e.sessionWebhook ? e.sessionWebhook.split("?")[0] : 'N/A'}, Reply content:`, msg);
+      //this.makeLog("debug", accountId, `[回复请求:${replyReqId}] Bot: ${accountId}, 原始类型: ${e.message_type}, SessionWebhook: ${e.sessionWebhook ? e.sessionWebhook.split("?")[0] : 'N/A'}, 回复内容:`, msg);
       if (e.message_type === "private") {
         return this.sendFriendMsg(e, msg);
       } else if (e.message_type === "group") {
         return this.sendGroupMsg(e, msg);
       }
-      this.makeLog("warn", accountId, `[e.reply REQ:${replyReqId}] Unknown message type for reply:`, e.message_type);
+      this.makeLog("warn", accountId, `[回复请求:${replyReqId}] 未知回复消息类型:`, e.message_type);
       return false;
     };
   }
@@ -287,16 +284,16 @@ class DingDingMultiAccountAdapter {
   }
 
   async load() {
-    this.makeLog("info", null, `[load] ${this.name} ${this.version} initializing...`);
+  //  this.makeLog("info", null, ` ${this.name} ${this.version} 正在初始化...`);
     const accountsToLoad = RootConfig.dingdingAccounts;
 
     if (RootConfig.enableDingAdapter === false) {
-        this.makeLog("warn", null, "[load] Adapter disabled by RootConfig.enableDingAdapter=false.");
+        this.makeLog("warn", null, "[加载] 适配器已通过 RootConfig.enableDingAdapter=false 禁用。");
         return false;
     }
 
     if (!Array.isArray(accountsToLoad) || accountsToLoad.length === 0) {
-      this.makeLog("warn", null, "[load] No DingTalk accounts in RootConfig.dingdingAccounts.");
+      this.makeLog("warn", null, "[加载] RootConfig.dingdingAccounts 中没有钉钉账号。");
       return true;
     }
 
@@ -304,11 +301,11 @@ class DingDingMultiAccountAdapter {
     for (const accountConfig of accountsToLoad) {
       const accountId = accountConfig.accountId;
       if (!accountId || !accountConfig.clientId || !accountConfig.clientSecret) {
-        this.makeLog("error", accountId || "UnknownAccount", "[load] Invalid account config (missing accountId, clientId, or clientSecret). Skipping.", accountConfig);
+        this.makeLog("error", accountId || "UnknownAccount", "[加载] 无效的账号配置 (缺少 accountId, clientId, 或 clientSecret)。跳过。", accountConfig);
         continue;
       }
 
-      this.makeLog("info", accountId, `[load] Initializing account: ${accountId} (ClientID: ${accountConfig.clientId.substring(0,10)}...)`);
+      //this.makeLog("info", accountId, `[加载] 正在初始化账号: ${accountId} (ClientID: ${accountConfig.clientId.substring(0,10)}...)`);
       
       const currentDwClient = new DWClient({
         clientId: accountConfig.clientId,
@@ -329,39 +326,39 @@ class DingDingMultiAccountAdapter {
       const onBotMessageForThisAccount = async (event) => {
         const streamMessageId = event.headers?.messageId;
         const rawData = event.data.toString();
-        const logPrefix = `[onBotMessage][Acc:${accountId}][Stream:${streamMessageId ? streamMessageId.slice(-6) : 'N/A'}]`;
-        this.makeLog("debug", accountId, `${logPrefix} Received. Data: ${rawData.substring(0,50)}...`);
+        const logPrefix = `[机器人消息][账号:${accountId}][流:${streamMessageId ? streamMessageId.slice(-6) : 'N/A'}]`;
+        this.makeLog("debug", accountId, `${logPrefix} 收到。数据: ${rawData.substring(0,50)}...`);
 
-        let ackPayloadData = { status: "SUCCESS", message: "Processed by Yunzai Adapter (default)" }; 
+        let ackPayloadData = { status: "SUCCESS", message: "由 Yunzai 适配器处理 (默认)" };
 
         if (!streamMessageId) {
-          this.makeLog("warn", accountId, `${logPrefix} Stream messageId (headers.messageId) missing! Cannot ACK. Data:`, rawData);
+          this.makeLog("warn", accountId, `${logPrefix} 流 messageId (headers.messageId) 缺失! 无法 ACK。数据:`, rawData);
         }
 
         try {
-            this.makeLog("debug", accountId, `${logPrefix} Calling makeMessage.`);
+            this.makeLog("debug", accountId, `${logPrefix} 调用 makeMessage。`);
             this.makeMessage(event, accountId, accountConfig);
-            this.makeLog("info", accountId, `${logPrefix} makeMessage completed. Sending SUCCESS ACK.`);
-            ackPayloadData.message = "Successfully processed by makeMessage";
+            //this.makeLog("info", accountId, `${logPrefix} makeMessage 完成。发送 SUCCESS ACK。`);
+            ackPayloadData.message = "由 makeMessage 成功处理";
         } catch (e) {
-            this.makeLog("error", accountId, `${logPrefix} Error in makeMessage. Error: ${e.stack || e}`);
-            ackPayloadData = { status: "FAILURE", message: `Adapter processing error: ${e.message}` };
+            this.makeLog("error", accountId, `${logPrefix} makeMessage 错误。错误: ${e.stack || e}`);
+            ackPayloadData = { status: "FAILURE", message: `适配器处理错误: ${e.message}` };
         } finally {
             if (streamMessageId) {
-                this.makeLog("debug", accountId, `${logPrefix} Sending ACK with data:`, ackPayloadData);
+               // this.makeLog("debug", accountId, `${logPrefix} 发送 ACK 数据:`, ackPayloadData);
                 currentDwClient.socketCallBackResponse(streamMessageId, ackPayloadData);
             }
         }
       };
 
       try {
-        this.makeLog("info", accountId, `[load] Registering Stream callback for ${accountId}...`);
+       // this.makeLog("info", accountId, `[加载] 正在为 ${accountId} 注册流回调...`);
         // 使用 registerCallbackListener 来确保订阅被正确添加
         currentDwClient.registerCallbackListener(TOPIC_ROBOT, onBotMessageForThisAccount);
         
-        this.makeLog("info", accountId, `[load] Connecting Stream for ${accountId}...`);
+       // this.makeLog("info", accountId, `[加载] 正在为 ${accountId} 连接流...`);
         await currentDwClient.connect();
-        this.makeLog("info", accountId, `[load] Stream connected for ${accountId}.`);
+       // this.makeLog("info", accountId, `[加载] ${accountId} 的流已连接。`);
 
         if (!Bot[botGlobalEntryKey]) {
           const botInfo = await this.getBotInfo(accountConfig);
@@ -375,7 +372,7 @@ class DingDingMultiAccountAdapter {
             stat: { start_time: Math.floor(Date.now() / 1000) },
             
             pickFriend: (user_id) => {
-                this.makeLog('debug', accountId, `[Bot.${botGlobalEntryKey}.pickFriend](${user_id})`);
+                this.makeLog('debug', accountId, `[Bot.${botGlobalEntryKey}.选择好友](${user_id})`);
                 const context = { user_id, self_id: botGlobalEntryKey, _accountConfig: accountConfig };
                 return {
                     id: user_id, uin: user_id, self_id: botGlobalEntryKey,
@@ -384,7 +381,7 @@ class DingDingMultiAccountAdapter {
             },
             get pickUser() { return Bot[botGlobalEntryKey].pickFriend; },
             pickGroup: (group_id) => {
-                this.makeLog('debug', accountId, `[Bot.${botGlobalEntryKey}.pickGroup](${group_id})`);
+                this.makeLog('debug', accountId, `[Bot.${botGlobalEntryKey}.选择群聊](${group_id})`);
                 const context = { group_id, self_id: botGlobalEntryKey, _accountConfig: accountConfig };
                 return {
                     id: group_id, uin: group_id, self_id: botGlobalEntryKey,
@@ -393,36 +390,36 @@ class DingDingMultiAccountAdapter {
                 };
             },
             pickMember: (group_id, user_id) => {
-                 this.makeLog('debug', accountId, `[Bot.${botGlobalEntryKey}.pickMember](${group_id}, ${user_id})`);
+                 this.makeLog('debug', accountId, `[Bot.${botGlobalEntryKey}.选择成员](${group_id}, ${user_id})`);
                  const context = { group_id, user_id, self_id: botGlobalEntryKey, _accountConfig: accountConfig };
                  return {
                     id: user_id, uin: user_id, group_id, self_id: botGlobalEntryKey,
                     sendMsg: (msg, quote=false) => this._sendDingDingMsg("group", context, msg, accountId)
                  };
             },
-            getFriendList: async () => { this.makeLog('warn', accountId, `[Bot.${botGlobalEntryKey}.getFriendList] Not implemented.`); return new Map(); },
-            getGroupList: async () => { this.makeLog('warn', accountId, `[Bot.${botGlobalEntryKey}.getGroupList] Not implemented.`); return new Map(); },
+            getFriendList: async () => { this.makeLog('warn', accountId, `[Bot.${botGlobalEntryKey}.获取好友列表] 未实现。`); return new Map(); },
+            getGroupList: async () => { this.makeLog('warn', accountId, `[Bot.${botGlobalEntryKey}.获取群列表] 未实现。`); return new Map(); },
             fl: new Map(), gl: new Map(), gml: new Map(),
           };
           if (Bot.bots && typeof Bot.bots === 'object') {
               Bot.bots[botGlobalEntryKey] = Bot[botGlobalEntryKey];
           }
-          this.makeLog("mark", accountId, `Bot entry ${botGlobalEntryKey} (Name: ${botInfo.nick}) created and connected.`);
+          this.makeLog("mark", accountId, `钉钉机器人${botGlobalEntryKey} ( ${botInfo.nick}) 已连接`);
           Bot.em(`connect.${botGlobalEntryKey}`, { self_id: botGlobalEntryKey });
           loadedAccountCount++;
         } else {
-            this.makeLog("warn", accountId, `Bot entry ${botGlobalEntryKey} already exists.`);
+            this.makeLog("warn", accountId, `Bot 条目 ${botGlobalEntryKey} 已存在。`);
         }
       } catch (error) {
-        this.makeLog("error", accountId, `[load] Failed to connect or load account ${accountId}:`, error);
+        this.makeLog("error", accountId, `[钉钉账号异常] 连接或加载账号 ${accountId} 失败:`, error);
       }
     }
 
     if (loadedAccountCount > 0) {
-        this.makeLog("mark", null, `${this.name} initialized with ${loadedAccountCount} account(s).`);
+        this.makeLog("mark", null, `钉钉已初始化 ${loadedAccountCount} 个账号`);
         return true;
     } else {
-        this.makeLog("warn", null, `${this.name} did not load any accounts (or all failed). Ensure dingdingAccounts is configured and enableDingAdapter is true.`);
+        this.makeLog("warn", null, `${this.name} 未加载任何账号 (或全部失败)。请确保 dingdingAccounts 已配置且 enableDingAdapter 为 true。`);
         return true; 
     }
   }
