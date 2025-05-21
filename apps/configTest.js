@@ -1,6 +1,6 @@
 import Config from "../../../plugins/Ding-plugin/lib/config.js";
 
-export class configTest extends plugin {
+export default class configTest extends plugin {
   constructor() {
     super({
       /** 功能名称 */
@@ -10,7 +10,6 @@ export class configTest extends plugin {
 
       rule: [
         { reg: "ding", fnc: "tst" },
-        { reg: "Ding", fnc: "datatest" },
       ],
     });
   }
@@ -32,41 +31,8 @@ export class configTest extends plugin {
     return { username: randomUsername, email: randomEmail };
   }
 
-  async datatest() {
-    const db = Database; // 使用单例实例
 
-    const createTableSQL = `
-        CREATE TABLE IF NOT EXISTS users (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            username VARCHAR(50) NOT NULL,
-            email VARCHAR(100) NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    `;
 
-    try {
-      // 使用 query 方法执行 SQL 语句
-      await db.query(createTableSQL);
-      console.log('Table "users" created successfully');
-    } catch (error) {
-      console.error("Error creating table:", error.message);
-    }
-    const { username, email } = this.getRandomUserData();
-
-    const insertSQL = `
-        INSERT INTO users (username, email)
-        VALUES (?, ?)
-    `;
-
-    try {
-      // 执行插入数据的 SQL 语句
-      await db.query(insertSQL, [username, email]);
-      console.log(`Inserted random user: ${username}, email: ${email}`);
-    } catch (error) {
-      console.error("Error inserting random data:", error.message);
-    } finally {
-      // 可选：插入完成后断开数据库连接
-      // await db.disconnect();
-    }
-  }
 }
+
+

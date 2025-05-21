@@ -22,10 +22,8 @@ class DingDingMultiAccountAdapter {
     let msg = args.map(arg => Bot.String(arg)).join(" ");
     msg = msg.replace(/base64:\/\/.*?([,\]"])/g, "base64://...$1");
 
-    if (typeof level === 'string' && this.logger && typeof this.logger[level] === 'function') {
-      this.logger[level](`[${instanceName}] ${msg}`);
-    } else if (this.logger && typeof this.logger.info === 'function') {
-      this.logger.info(`[${instanceName}] ${msg}`);
+    if (typeof level === 'string' && Bot.makeLog) {
+      Bot.makeLog(level, `${msg}`, instanceName, true);
     } else {
       const time = new Date().toLocaleTimeString();
       console.log(`[${time}][${level.toUpperCase() || 'INFO'}][${instanceName}] ${msg}`);
