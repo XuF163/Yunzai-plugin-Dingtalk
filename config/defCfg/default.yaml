@@ -1,15 +1,11 @@
-#钉钉配置项目
-clientId: ""
-clientSecret: ""
-webhook: "https://oapi.dingtalk.com/robot/sendBySession?session="
-#腾讯云对象存储，非必要不食用
-Bucket: ""
-Region: ""
-Key: ""
-SecretId: ""
-SecretKey: ""
-#钉盘密钥
-PanClient ID: ""
-PanClientSecret: ""
-appKey: ""
-appSecret: ""
+# Ding-plugin 默认配置文件
+
+
+enableDingAdapter: true
+
+dingdingAccounts:
+  - accountId: ""              # 唯一账号标识符（必填）
+    clientId: "" # 钉钉AppKey
+    clientSecret: "" # 钉钉AppSecret
+    webhook: "https://oapi.dingtalk.com/robot/sendBySession?session="
+    debug: false
